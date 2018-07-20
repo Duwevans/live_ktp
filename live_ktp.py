@@ -7,17 +7,19 @@ import shutil
 import os
 from datetime import datetime
 from datetime import date
+from sys import exit
+
 os.chdir('C:\\Users\\DuEvans\\Documents\\ktp_data')
 
 target_date = datetime.now().strftime("%m_%d_%Y")
 file = ('C:\\Users\\DuEvans\\Downloads\\ktp_pop_' + target_date + '.xlsx')
 
 # read the current population dataset
-df = pd.read_excel(file, skiprows=7)
-#df = pd.read_excel('/Users/duncanevans/Downloads/ktp_pop_01_01_2018.xlsx', skiprows=7)
+df0 = pd.read_excel(file, skiprows=7)
+#df0 = pd.read_excel('C:\\Users\\DuEvans\\Downloads\\ktp_pop_07_16_2018.xlsx', skiprows=7)
 # filter to just full time
-full_time = df['FT / PT'] == 'Full time'
-df = df[full_time]
+full_time = df0['FT / PT'] == 'Full time'
+df = df0[full_time]
 
 # read the manager key
 mgr_key = pd.read_csv('C:\\Users\\DuEvans\\Documents\\ktp_data\\mgr_key\\meid_key.csv')
@@ -78,9 +80,12 @@ pop_mapped = mgr_mapped.append(eeid_mapped)
 pop_mapped = pop_mapped.rename(columns={'Primary Key': 'Manager'})
 
 # match service buckets
+
+
+
 pop_mapped['days_tenure'] = (datetime.now() - (pop_mapped['(Most Recent) Hire Date'])).dt.days
-pop_mapped['months_tenure'] = (pop_mapped['days_tenure']/12).round(0)
 pop_mapped['yrs_tenure'] = (pop_mapped['days_tenure']/365).round(0)
+pop_mapped['months_tenure'] = (pop_mapped['yrs_tenure']/12).round(0)
 
 
 
@@ -132,15 +137,6 @@ pop_mapped['Ethnicity'] = pop_mapped['Race/Ethnicity (Locale Sensitive)'].map({'
 dni_value = 'dni'
 pop_mapped['Ethnicity'] = pop_mapped['Ethnicity'].fillna(value=dni_value)
 print('Ethnicity mapped and organized.')
-
-# todo: map gender into usable labels
-
-# todo: import bonus targets into the dataset
-
-# todo: import sales targets into the dataset
-
-# todo: create target annualized compensation field
-
 
 
 def find_unmatched():
@@ -199,6 +195,7 @@ from oauth2client.service_account import ServiceAccountCredentials
 
 os.chdir('C:\\Users\\DuEvans\\Documents\\ktp_data')
 pop = pd.read_csv('C:\\Users\\DuEvans\\Documents\\ktp_data\\population\\ktp_pop_' + target_date + '.csv')
+#pop = pd.read_csv('C:\\Users\\DuEvans\\Documents\\ktp_data\\population\\ktp_pop_07_09_2018.csv', encoding='latin1')
 # remove that one dumb field
 pop.pop('CC Hierarchy')
 
@@ -215,6 +212,12 @@ pop['Management Level1'] = pop['Management Level'].map({'11 Individual Contribut
                                                         '2 Senior Officer': 'Above VP',
                                                         '3 Executive VP': 'Above VP'})
 
+# manually change a couple folks to be in the right labels:
+pop.loc[pop['ID'] == 'P000238419', 'Management Level1'] = 'VP'
+pop.loc[pop['ID'] == 'P000018502', 'Management Level1'] = 'VP'
+pop.loc[pop['ID'] == 'P000055603', 'Management Level1'] = 'VP'
+pop.loc[pop['ID'] == 'P000025952', 'Gender'] = 'Male'
+
 # create the structure-specific datasets
 ktp_data = pop[pop['Structure'].isin(['Admissions', 'Licensure', 'Common', 'New Ventures', 'Executive'])]
 admissions_data = pop[pop['Structure'].isin(['Admissions'])]
@@ -222,7 +225,61 @@ licensure_data = pop[pop['Structure'].isin(['Licensure'])]
 common_data = pop[pop['Structure'].isin(['Common'])]
 new_ventures_data = pop[pop['Structure'].isin(['New Ventures'])]
 
+print('\nKTP full time employees mapped.')
+
+# organize the part time faculty
+part_time = df0['FT / PT'] == 'Part time'
+pt_data = df0[part_time]
+
+# map ethnicity
+
+
+# find the faculty based on job profile
+faculty_data = pt_data.loc[pt_data['Job Profile (Primary)'].isin(['Instructor - Grad / COA PT', 'Instructor - PC PT', 'Instructor - NCLEX',
+                                                                  'Instructor - Grad Canada PT', 'Instructor - Mprep', 'KTP UK Instructor'])]
+
+# remove compensation information
+faculty_data.pop('Total Base Pay - Amount')
+faculty_data.pop('Total Base Pay Annualized - Amount')
+
+faculty_data['Ethnicity'] = faculty_data['Race/Ethnicity (Locale Sensitive)'].map({'White (Not Hispanic or Latino) (United States of America)': 'White',
+                                    'Asian (Not Hispanic or Latino) (United States of America)': 'Asian',
+                                    'Black or African American (Not Hispanic or Latino) (United States of America)': 'Black',
+                                    'Hispanic or Latino (United States of America)': 'Hispanic',
+                                    'Two or More Races (Not Hispanic or Latino) (United States of America)': 'Two or more',
+                                    'White - Other (United Kingdom)': 'White',
+                                    'White - Other European (United Kingdom)': 'White',
+                                    'Asian (Indian) (India)': 'Asian',
+                                    'Black - African (United Kingdom)': 'Black',
+                                    'American Indian or Alaska Native (Not Hispanic or Latino) (United States of America)': 'American Indian',
+                                    'White - British (United Kingdom)': 'White',
+                                    'Native Hawaiian or Other Pacific Islander (Not Hispanic or Latino) (United States of America)': 'Pacific Islander'})
+
+faculty_data['days_old'] = (datetime.now() - (faculty_data['Date of Birth (Locale Sensitive)'])).dt.days
+
+faculty_data['Age'] = (faculty_data['days_old']/365).round(0)
+
+faculty_filename = ('ktp_faculty_' + target_date + '.csv')
+os.chdir('C:\\Users\\DuEvans\\Documents\\ktp_data\\population\\faculty')
+pop_mapped.to_csv(faculty_filename, index=False)
+print('Faculty records archived.')
+
+
+# remove that one dumb field that makes the sheet look weird
+faculty_data.pop('CC Hierarchy')
+
+
+# make sure google sheet should be updated
+# important to allow for 'n' input as I might be fixed past records
+input = input('\nUpdate google spreadsheets? (y/n) ')
+if input == 'y':
+    pass
+elif input == 'n':
+    print('\nProcess finished.')
+    exit()
+
 print('\nWriting to google...')
+
 # use creds to create a client to interact with the Google Drive API
 scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
 creds = ServiceAccountCredentials.from_json_keyfile_name('client_secret.json', scope)
@@ -239,6 +296,8 @@ common_sheet = client.open("demographic visuals data").worksheet('common')
 common_sheet.clear()
 new_ventures_sheet = client.open("demographic visuals data").worksheet('new ventures')
 new_ventures_sheet.clear()
+faculty_sheet = client.open("demographic visuals data").worksheet('faculty')
+faculty_sheet.clear()
 
 
 # write each of the sheets with new data
@@ -247,6 +306,7 @@ gspread_dataframe.set_with_dataframe(admissions_sheet, admissions_data)
 gspread_dataframe.set_with_dataframe(licensure_sheet, licensure_data)
 gspread_dataframe.set_with_dataframe(common_sheet, common_data)
 gspread_dataframe.set_with_dataframe(new_ventures_sheet, new_ventures_data)
+gspread_dataframe.set_with_dataframe(faculty_sheet, faculty_data)
 
 
 
