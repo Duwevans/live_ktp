@@ -16,10 +16,18 @@ file = ('C:\\Users\\DuEvans\\Downloads\\ktp_pop_' + target_date + '.xlsx')
 
 # read the current population dataset
 df0 = pd.read_excel(file, skiprows=7)
+
+# save the total population, as is, no changes for now
+os.chdir('C\\Users\\DuEvans\\Documents\\ktp_data\\population\\raw_records')
+file_name = 'ktp_raw_pop_' + target_date + '.csv'
+df0.to_csv(file_name, index=False)
+
+os.chdir('C:\\Users\\DuEvans\\Documents\\ktp_data')
+
 #df0 = pd.read_excel('C:\\Users\\DuEvans\\Downloads\\ktp_pop_07_16_2018.xlsx', skiprows=7)
 # filter to just full time
 full_time = df0['FT / PT'] == 'Full time'
-df = df0[full_time]
+df_ft = df0[full_time]
 
 # read the manager key
 mgr_key = pd.read_csv('C:\\Users\\DuEvans\\Documents\\ktp_data\\mgr_key\\meid_key.csv')
@@ -30,7 +38,7 @@ eeid_key.columns = ['Name', 'ID', 'Structure', 'Group', 'Team']
 
 
 
-df_2 = pd.merge(df, mgr_key, on='Manager ID', how='left')
+df_2 = pd.merge(df_ft, mgr_key, on='Manager ID', how='left')
 
 
 
@@ -89,7 +97,7 @@ pop_mapped['months_tenure'] = (pop_mapped['yrs_tenure']/12).round(0)
 
 
 
-# todo: create age column
+# create age column
 
 # calculate age based on the date of birth field
 pop_mapped['days_old'] = (datetime.now() - (pop_mapped['Date of Birth (Locale Sensitive)'])).dt.days
@@ -121,7 +129,7 @@ mgr_missing = na_remaining['Manager ID'].nunique()
 count_na = na_remaining['Manager ID'].count()
 
 
-# todo: map ethnicity into usable labels
+# map ethnicity into usable labels
 pop_mapped['Ethnicity'] = pop_mapped['Race/Ethnicity (Locale Sensitive)'].map({'White (Not Hispanic or Latino) (United States of America)': 'White',
                                     'Asian (Not Hispanic or Latino) (United States of America)': 'Asian',
                                     'Black or African American (Not Hispanic or Latino) (United States of America)': 'Black',
@@ -161,32 +169,6 @@ def find_unmatched():
             exit()
 
 find_unmatched()
-
-
-# list numbers to create sankey for KPA by business unit
-structures = ['Admissions', 'Common', 'Licensure', 'New Ventures']
-
-df_kpa = pop_mapped[pop_mapped['Structure'].isin(structures)]
-
-
-structure_count = df_kpa['Structure'].value_counts()
-#print(structure_count)
-
-group_count = df_kpa['Group'].value_counts()
-#print(group_count)
-
-
-# list numbers to create sankey for KTP by brm category
-
-categories = ['READINESS', 'ACQUISITION', 'DELIVERY', 'SUPPORT']
-df_brm = pop_mapped[pop_mapped['Category'].isin(categories)]
-
-category_count = df_brm['Category'].value_counts()
-#print(category_count)
-
-process_count = df_brm['Process'].value_counts()
-#print(process_count)
-
 
 
 # send the data to a google spread sheet
