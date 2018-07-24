@@ -18,7 +18,7 @@ file = ('C:\\Users\\DuEvans\\Downloads\\ktp_pop_' + target_date + '.xlsx')
 df0 = pd.read_excel(file, skiprows=7)
 
 # save the total population, as is, no changes for now
-os.chdir('C\\Users\\DuEvans\\Documents\\ktp_data\\population\\raw_records')
+os.chdir('C:\\Users\\DuEvans\\Documents\\ktp_data\\population\\raw_records')
 file_name = 'ktp_raw_pop_' + target_date + '.csv'
 df0.to_csv(file_name, index=False)
 
@@ -260,7 +260,9 @@ elif input == 'n':
     print('\nProcess finished.')
     exit()
 
-print('\nWriting to google...')
+print('\nHear me, oh Great Google overseers...')
+
+os.chdir('C:\\Users\\DuEvans\\Documents\\ktp_data')
 
 # use creds to create a client to interact with the Google Drive API
 scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
@@ -305,5 +307,44 @@ last_updated_sheet = client.open("demographic visuals data").worksheet('last_upd
 last_updated_sheet.update_cell(1,1,last_update)
 
 print('\nDemographic data sets updated in google sheet.')
+
+
+# todo: calculate the gender diversity index for each OU, Group, and Team
+# pop is the ft and formatted data set
+
+print('\nCalculating diversity and gender indices...')
+
+str_gdr = pd.pivot_table(pop, values=['ID'], index=['Structure'], columns=['Gender'], aggfunc=len)
+str_gdr_df = pd.DataFrame(str_gdr.to_records())
+str_gdr_df = str_gdr_df.fillna(0)
+str_gdr_df = str_gdr_df.rename(columns={"('ID', 'Female')": 'female', "('ID', 'Male')": 'male'})
+str_gdr_df['gdr_total'] = str_gdr_df['male'] + str_gdr_df['female']
+
+str_gdr_df['pct_female'] = str_gdr_df['female'] / str_gdr_df['gdr_total']
+
+# todo: calculate the ethnicity diversity index for each OU, Group, and Team
+
+str_eth = pd.pivot_table(pop, values=['ID'], index=['Structure'], columns=['Ethnicity'], aggfunc=len)
+str_eth_df = pd.DataFrame(str_eth.to_records())
+str_eth_df = str_eth_df.fillna(0)
+str_eth_df = str_eth_df.rename(columns={"('ID', 'American Indian')": 'american_indian', "('ID', 'Asian')": 'asian',
+                                        "('ID', 'Black')": 'black', "('ID', 'Hispanic')": 'hispanic',
+                                        "('ID', 'Pacific Islander')": 'pacific_islander', "('ID', 'Two or more')": 'two_or_more',
+                                        "('ID', 'White')": 'white'})
+str_eth_df['eth_total'] = (str_eth_df['american_indian'] + str_eth_df['asian'] + str_eth_df['black'] + str_eth_df['hispanic']\
+                      + str_eth_df['pacific_islander'] + str_eth_df['two_or_more'] + str_eth_df['white'])
+
+str_eth_df['non_white'] = (str_eth_df['american_indian'] + str_eth_df['asian'] + str_eth_df['black']
+                        + str_eth_df['hispanic'] + str_eth_df['pacific_islander'] + str_eth_df['two_or_more'])
+
+str_eth_df['pct_non_white'] = str_eth_df['non_white'] / str_eth_df['eth_total']
+
+str_df = pd.merge(str_eth_df, str_gdr_df, on=['Structure'], how='left')
+
+str_df = str_df[['Structure', 'female', 'male', 'gdr_total', 'pct_female', 'american_indian', 'asian', 'black',
+                 'hispanic', 'pacific_islander', 'two_or_more', 'white', 'eth_total', 'pct_non_white']]
+
+
+# todo: write the D&I indices to a google sheet as backend
 
 print('\nProcess finished.\n')
