@@ -165,8 +165,8 @@ def find_unmatched():
             print(name)
         for id in na_remaining['ID'].unique():
             print(id)
-            print('\nExiting...')
-            exit()
+        print('\nExiting...')
+        exit()
 
 find_unmatched()
 
