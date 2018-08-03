@@ -11,8 +11,11 @@ from sys import exit
 
 os.chdir('C:\\Users\\DuEvans\\Documents\\ktp_data')
 
-target_date = datetime.now().strftime("%m_%d_%Y")
+target_date = input('\nWhat is the target date? (mm_dd_yyyy) ')
+
 file = ('C:\\Users\\DuEvans\\Downloads\\ktp_pop_' + target_date + '.xlsx')
+records_date = datetime.strptime(target_date, '%m_%d_%Y')
+
 
 # read the current population dataset
 df0 = pd.read_excel(file, skiprows=7)
@@ -36,10 +39,7 @@ eeid_key = pd.read_csv('C:\\Users\\DuEvans\\Documents\\ktp_data\\mgr_key\\eid_ke
 # format the eid key to match the manager map
 eeid_key.columns = ['Name', 'ID', 'Structure', 'Group', 'Team']
 
-
-
 df_2 = pd.merge(df_ft, mgr_key, on='Manager ID', how='left')
-
 
 
 # map against BRM categories
@@ -86,21 +86,17 @@ eeid_mapped = pd.merge(mgr_nan, eeid_key, on='ID', how='left')
 pop_mapped = mgr_mapped.append(eeid_mapped)
 
 pop_mapped = pop_mapped.rename(columns={'Primary Key': 'Manager'})
+#remove that one dumb field
+pop_mapped.pop('CC Hierarchy')
 
 # match service buckets
-
-
-
-pop_mapped['days_tenure'] = (datetime.now() - (pop_mapped['(Most Recent) Hire Date'])).dt.days
+pop_mapped['days_tenure'] = (records_date - (pop_mapped['(Most Recent) Hire Date'])).dt.days
 pop_mapped['yrs_tenure'] = (pop_mapped['days_tenure']/365).round(0)
 pop_mapped['months_tenure'] = (pop_mapped['yrs_tenure']/12).round(0)
-
-
-
 # create age column
 
 # calculate age based on the date of birth field
-pop_mapped['days_old'] = (datetime.now() - (pop_mapped['Date of Birth (Locale Sensitive)'])).dt.days
+pop_mapped['days_old'] = (records_date - (pop_mapped['Date of Birth (Locale Sensitive)'])).dt.days
 
 pop_mapped['Age'] = (pop_mapped['days_old']/365).round(0)
 
@@ -109,11 +105,6 @@ age_bin_names = ['<25', '25 to 34', '35 to 44', '45 to 54', '55 to 64', '65+']
 age_bins = [18, 24, 34, 44, 54, 64, 100]
 pop_mapped['Age Bracket'] = pd.cut(pop_mapped['Age'], age_bins, labels=age_bin_names)
 
-#today_date = pd.to_datetime(target_date, format='%d/%m/%Y')
-#today_date = datetime.now().strftime("%m-%d_-%Y")
-
-#pop_mapped['DOB'] = pd.to_datetime(pop_mapped['Date of Birth (Locale Sensitive)'], format='%d/%m/%Y', errors='ignore')
-#pop_mapped['Age'] = today_date - pop_mapped['DOB']
 
 yrs_ten_bins = [-1, 2, 4, 6, 8, 10, 100]
 
@@ -146,6 +137,67 @@ dni_value = 'dni'
 pop_mapped['Ethnicity'] = pop_mapped['Ethnicity'].fillna(value=dni_value)
 print('Ethnicity mapped and organized.')
 
+# reset management labels
+
+
+pop_mapped['Management Level1'] = pop_mapped['Management Level'].map({'11 Individual Contributor': 'Individual Contributor',
+                                                        '9 Manager': 'Manager', '8 Senior Manager': 'Manager',
+                                                        '10 Supervisor': 'Manager', '7 Director': 'Director',
+                                                        '6 Exec & Sr. Director/Dean': 'Executive Director',
+                                                        '5 VP': 'VP', '4 Senior VP': 'Above VP',
+                                                        '2 Senior Officer': 'Above VP',
+                                                        '3 Executive VP': 'Above VP'})
+
+# manually change a couple folks to be in the right labels:
+pop_mapped.loc[pop_mapped['ID'] == 'P000238419', 'Management Level1'] = 'VP'
+pop_mapped.loc[pop_mapped['ID'] == 'P000018502', 'Management Level1'] = 'VP'
+pop_mapped.loc[pop_mapped['ID'] == 'P000055603', 'Management Level1'] = 'VP'
+pop_mapped.loc[pop_mapped['ID'] == 'P000025952', 'Gender'] = 'Male'
+
+
+# label everything as either 'Prepare' or 'New'
+
+# this is just either 'Prepare,' or 'New'
+pop_mapped['Prepare/New A'] = pop_mapped['Group'].map({'Admissions Group': 'Prepare', 'Technology': 'Prepare',
+                                                       'NXT': 'Prepare', 'Licensure Group': 'Prepare',
+                                                       'Med': 'Prepare', 'Finance & Accounting': 'Prepare',
+                                                       'Admissions Faculty': 'Prepare', 'Nursing': 'Prepare',
+                                                       'MPrep': 'Prepare', 'Marketing': 'Prepare', 'Bar': 'Prepare',
+                                                       'HR / PR / Admin': 'Prepare', 'Publishing': 'Prepare',
+                                                       'Data and Learning Science': 'Prepare', 'Metis': 'New',
+                                                       'Digital Media': 'Prepare', 'iHuman': 'New',
+                                                       'Advise': 'New', 'International': 'Prepare',
+                                                       'Metis Faculty': 'New', 'Admissions Core': 'Prepare',
+                                                       'Admissions New': 'Prepare', 'Allied Health': 'Prepare',
+                                                       'Legal': 'Prepare', 'DBC/TTL': 'New', 'Executive': 'Prepare',
+                                                       'Licensure Programs': 'Prepare'})
+
+# this is either 'Prepare,' or the specific new business group
+pop_mapped['Prepare/New B'] = pop_mapped['Group'].map({'Admissions Group': 'Prepare', 'Technology': 'Prepare',
+                                                       'NXT': 'Prepare', 'Licensure Group': 'Prepare',
+                                                       'Med': 'Prepare', 'Finance & Accounting': 'Prepare',
+                                                       'Admissions Faculty': 'Prepare', 'Nursing': 'Prepare',
+                                                       'MPrep': 'Prepare', 'Marketing': 'Prepare', 'Bar': 'Prepare',
+                                                       'HR / PR / Admin': 'Prepare', 'Publishing': 'Prepare',
+                                                       'Data and Learning Science': 'Prepare', 'Metis': 'Metis',
+                                                       'Digital Media': 'Prepare', 'iHuman': 'iHuman',
+                                                       'Advise': 'Advise', 'International': 'Prepare',
+                                                       'Metis Faculty': 'Metis', 'Admissions Core': 'Prepare',
+                                                       'Admissions New': 'Prepare', 'Allied Health': 'Prepare',
+                                                       'Legal': 'Prepare', 'DBC/TTL': 'DBC/TTL', 'Executive': 'Prepare',
+                                                       'Licensure Programs': 'Prepare'})
+
+# label everything into current digital/technology/marketing roles
+
+pop_mapped['Digital'] = pop_mapped['Team'].map({'Analytics and Digital Marketing': 'Marketing',
+                                                'Email Marketing': 'Marketing', 'Growth': 'Marketing',
+                                                'Market Research': 'Marketing', 'Marketing Leadership': 'Marketing',
+                                                'Cloud Operations': 'Technology', 'Data Engineering': 'Technology',
+                                                'Delivery Management': 'Technology', 'MPrep Technology': 'Technology',
+                                                'Platform': 'Technology', 'UX': 'Technology', 'Website': 'Technology'})
+
+
+
 
 def find_unmatched():
     """Returns the """
@@ -153,7 +205,7 @@ def find_unmatched():
     def save_record():
         """creates a copy of the population headcount on the given date in subfolder"""
         new_filename = ('ktp_pop_' + target_date + '.csv')
-        os.chdir('C:\\Users\\DuEvans\\Documents\\ktp_data\\population')
+        os.chdir('C:\\Users\\DuEvans\\Documents\\ktp_data\\population\\ft_ktp')
         pop_mapped.to_csv(new_filename, index=False)
         print('Record archived.')
     if count_na == 0:
@@ -165,6 +217,7 @@ def find_unmatched():
             print(name)
         for id in na_remaining['ID'].unique():
             print(id)
+        os.remove(file)
         print('\nExiting...')
         exit()
 
@@ -176,36 +229,28 @@ find_unmatched()
 from oauth2client.service_account import ServiceAccountCredentials
 
 os.chdir('C:\\Users\\DuEvans\\Documents\\ktp_data')
-pop = pd.read_csv('C:\\Users\\DuEvans\\Documents\\ktp_data\\population\\ktp_pop_' + target_date + '.csv')
-#pop = pd.read_csv('C:\\Users\\DuEvans\\Documents\\ktp_data\\population\\ktp_pop_07_09_2018.csv', encoding='latin1')
+pop = pd.read_csv('C:\\Users\\DuEvans\\Documents\\ktp_data\\population\\ft_ktp\\ktp_pop_' + target_date + '.csv')
 # remove that one dumb field
-pop.pop('CC Hierarchy')
+#pop.pop('CC Hierarchy')
 
+pop_conf = pd.read_csv('C:\\Users\\DuEvans\\Documents\\ktp_data\\population\\ft_ktp\\ktp_pop_' + target_date + '.csv')
+#pop_conf.pop('CC Hierachy')
+
+pop_non_conf = pop
 # remove compensation fields - removing confidential information
-pop.pop('Total Base Pay - Amount')
-pop.pop('Total Base Pay Annualized - Amount')
+pop_non_conf.pop('Total Base Pay - Amount')
+pop_non_conf.pop('Total Base Pay Annualized - Amount')
 
-# map management level into something usable
-pop['Management Level1'] = pop['Management Level'].map({'11 Individual Contributor': 'Individual Contributor',
-                                                        '9 Manager': 'Manager', '8 Senior Manager': 'Manager',
-                                                        '10 Supervisor': 'Manager', '7 Director': 'Director',
-                                                        '6 Exec & Sr. Director/Dean': 'Executive Director',
-                                                        '5 VP': 'VP', '4 Senior VP': 'Above VP',
-                                                        '2 Senior Officer': 'Above VP',
-                                                        '3 Executive VP': 'Above VP'})
-
-# manually change a couple folks to be in the right labels:
-pop.loc[pop['ID'] == 'P000238419', 'Management Level1'] = 'VP'
-pop.loc[pop['ID'] == 'P000018502', 'Management Level1'] = 'VP'
-pop.loc[pop['ID'] == 'P000055603', 'Management Level1'] = 'VP'
-pop.loc[pop['ID'] == 'P000025952', 'Gender'] = 'Male'
 
 # create the structure-specific datasets
-ktp_data = pop[pop['Structure'].isin(['Admissions', 'Licensure', 'Common', 'New Ventures', 'Executive'])]
-admissions_data = pop[pop['Structure'].isin(['Admissions'])]
-licensure_data = pop[pop['Structure'].isin(['Licensure'])]
-common_data = pop[pop['Structure'].isin(['Common'])]
-new_ventures_data = pop[pop['Structure'].isin(['New Ventures'])]
+ktp_data_non_conf = pop_non_conf[pop_non_conf['Structure'].isin(['Admissions', 'Licensure', 'Common', 'New Ventures', 'Executive'])]
+admissions_data_non_conf = pop_non_conf[pop_non_conf['Structure'].isin(['Admissions'])]
+licensure_data_non_conf = pop_non_conf[pop_non_conf['Structure'].isin(['Licensure'])]
+common_data_non_conf = pop_non_conf[pop_non_conf['Structure'].isin(['Common'])]
+new_ventures_data_non_conf = pop_non_conf[pop_non_conf['Structure'].isin(['New Ventures'])]
+
+ktp_data_conf = pop_conf[pop_conf['Structure'].isin(['Admissions', 'Licensure', 'Common', 'New Ventures', 'Executive'])]
+
 
 print('\nKTP full time employees mapped.')
 
@@ -237,7 +282,7 @@ faculty_data['Ethnicity'] = faculty_data['Race/Ethnicity (Locale Sensitive)'].ma
                                     'White - British (United Kingdom)': 'White',
                                     'Native Hawaiian or Other Pacific Islander (Not Hispanic or Latino) (United States of America)': 'Pacific Islander'})
 
-faculty_data['days_old'] = (datetime.now() - (faculty_data['Date of Birth (Locale Sensitive)'])).dt.days
+faculty_data['days_old'] = (records_date - (faculty_data['Date of Birth (Locale Sensitive)'])).dt.days
 
 faculty_data['Age'] = (faculty_data['days_old']/365).round(0)
 
@@ -283,14 +328,21 @@ new_ventures_sheet.clear()
 faculty_sheet = client.open("demographic visuals data").worksheet('faculty')
 faculty_sheet.clear()
 
+# write to the compensation dashboard
+compensation_sheet = client.open("Compensation Dashboard v1.0").worksheet('people data')
+compensation_sheet.clear()
+
 
 # write each of the sheets with new data
-gspread_dataframe.set_with_dataframe(ktp_sheet, ktp_data)
-gspread_dataframe.set_with_dataframe(admissions_sheet, admissions_data)
-gspread_dataframe.set_with_dataframe(licensure_sheet, licensure_data)
-gspread_dataframe.set_with_dataframe(common_sheet, common_data)
-gspread_dataframe.set_with_dataframe(new_ventures_sheet, new_ventures_data)
+gspread_dataframe.set_with_dataframe(ktp_sheet, ktp_data_non_conf)
+gspread_dataframe.set_with_dataframe(admissions_sheet, admissions_data_non_conf)
+gspread_dataframe.set_with_dataframe(licensure_sheet, licensure_data_non_conf)
+gspread_dataframe.set_with_dataframe(common_sheet, common_data_non_conf)
+gspread_dataframe.set_with_dataframe(new_ventures_sheet, new_ventures_data_non_conf)
 gspread_dataframe.set_with_dataframe(faculty_sheet, faculty_data)
+gspread_dataframe.set_with_dataframe(compensation_sheet, ktp_data_conf)
+
+# todo: update the manager map google sheet with new information
 
 
 
