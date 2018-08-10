@@ -9,6 +9,9 @@ from datetime import datetime
 from datetime import date
 from sys import exit
 
+pd.options.mode.chained_assignment = None  # default='warn'
+
+
 os.chdir('C:\\Users\\DuEvans\\Documents\\ktp_data')
 
 target_date = input('\nWhat is the target date? (mm_dd_yyyy) ')
@@ -23,6 +26,7 @@ df0 = pd.read_excel(file, skiprows=7)
 # save the total population, as is, no changes for now
 os.chdir('C:\\Users\\DuEvans\\Documents\\ktp_data\\population\\raw_records')
 file_name = 'ktp_raw_pop_' + target_date + '.csv'
+df0.pop('CC Hierarchy')
 df0.to_csv(file_name, index=False)
 
 os.chdir('C:\\Users\\DuEvans\\Documents\\ktp_data')
@@ -39,7 +43,7 @@ eeid_key = pd.read_csv('C:\\Users\\DuEvans\\Documents\\ktp_data\\mgr_key\\eid_ke
 # format the eid key to match the manager map
 eeid_key.columns = ['Name', 'ID', 'Structure', 'Group', 'Team']
 
-df_2 = pd.merge(df_ft, mgr_key, on='Manager ID', how='left')
+df_2 = pd.merge(df_ft, mgr_key, on='Manager ID', how='left', sort=False)
 
 
 # map against BRM categories
@@ -64,7 +68,7 @@ brm_map = brm_map[['brm_key', 'Activity', 'Process', 'Category']]
 
 # merge the two files w/ BRM categories
 
-df_2 = pd.merge(df_2, brm_map, on='brm_key', how='left')
+df_2 = pd.merge(df_2, brm_map, on='brm_key', how='left', sort=False)
 
 
 # remove nan values from the matched dataset
@@ -80,14 +84,13 @@ mgr_nan = mgr_nan.drop(['Primary Key','Structure', 'Group', 'Team'], axis=1)
 
 
 # match the values to the EEID map
-eeid_mapped = pd.merge(mgr_nan, eeid_key, on='ID', how='left')
+eeid_mapped = pd.merge(mgr_nan, eeid_key, on='ID', how='left', sort=False)
 
 # compile the new dataset
-pop_mapped = mgr_mapped.append(eeid_mapped)
+pop_mapped = mgr_mapped.append(eeid_mapped, sort=False)
 
 pop_mapped = pop_mapped.rename(columns={'Primary Key': 'Manager'})
-#remove that one dumb field
-pop_mapped.pop('CC Hierarchy')
+
 
 # match service buckets
 pop_mapped['days_tenure'] = (records_date - (pop_mapped['(Most Recent) Hire Date'])).dt.days
@@ -243,13 +246,16 @@ pop_non_conf.pop('Total Base Pay Annualized - Amount')
 
 
 # create the structure-specific datasets
-ktp_data_non_conf = pop_non_conf[pop_non_conf['Structure'].isin(['Admissions', 'Licensure', 'Common', 'New Ventures', 'Executive'])]
-admissions_data_non_conf = pop_non_conf[pop_non_conf['Structure'].isin(['Admissions'])]
-licensure_data_non_conf = pop_non_conf[pop_non_conf['Structure'].isin(['Licensure'])]
-common_data_non_conf = pop_non_conf[pop_non_conf['Structure'].isin(['Common'])]
-new_ventures_data_non_conf = pop_non_conf[pop_non_conf['Structure'].isin(['New Ventures'])]
+ktp_data_non_conf = pop_non_conf.loc[pop_non_conf['Structure'].isin(['Admissions', 'Licensure', 'Common', 'New Ventures', 'Executive'])]
+admissions_data_non_conf = pop_non_conf.loc[pop_non_conf['Structure'].isin(['Admissions'])]
+admissions_nf_data_non_conf = admissions_data_non_conf.loc[~admissions_data_non_conf['CF Job Family Only Text (sans Job Group)'].isin(['Instructors'])]
+ad_academics_nf_data_non_conf = admissions_nf_data_non_conf.loc[admissions_nf_data_non_conf['Team'].isin(['Admissions Academics'])]
+licensure_data_non_conf = pop_non_conf.loc[pop_non_conf['Structure'].isin(['Licensure'])]
+common_data_non_conf = pop_non_conf.loc[pop_non_conf['Structure'].isin(['Common'])]
+common_no_nxt_non_conf = common_data_non_conf.loc[~common_data_non_conf['Team'].isin(['NXT Service', 'NXT Shared', 'Balance Resolution', 'SST'])]
+new_ventures_data_non_conf = pop_non_conf.loc[pop_non_conf['Structure'].isin(['New Ventures'])]
 
-ktp_data_conf = pop_conf[pop_conf['Structure'].isin(['Admissions', 'Licensure', 'Common', 'New Ventures', 'Executive'])]
+ktp_data_conf = pop_conf.loc[pop_conf['Structure'].isin(['Admissions', 'Licensure', 'Common', 'New Ventures', 'Executive'])]
 
 
 print('\nKTP full time employees mapped.')
@@ -292,18 +298,19 @@ pop_mapped.to_csv(faculty_filename, index=False)
 print('Faculty records archived.')
 
 
-# remove that one dumb field that makes the sheet look weird
-faculty_data.pop('CC Hierarchy')
-
 
 # make sure google sheet should be updated
-# important to allow for 'n' input as I might be fixed past records
-input = input('\nUpdate google spreadsheets? (y/n) ')
-if input == 'y':
+# important to allow for 'n' input as I might be fixing past records
+update_sheets = input('\nUpdate google spreadsheets? (y/n) ')
+if update_sheets == 'y':
     pass
-elif input == 'n':
-    print('\nProcess finished.')
-    exit()
+elif update_sheets == 'n':
+    updated_changes = input('\nRun comparison to previous week for changes? (y/n) ')
+    if updated_changes == 'y':
+        import changing_ktp
+    elif updated_changes == 'n':
+        print('\nProcess finished.')
+        exit()
 
 print('\nHear me, oh Great Google overseers...')
 
@@ -314,36 +321,77 @@ scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/au
 creds = ServiceAccountCredentials.from_json_keyfile_name('client_secret.json', scope)
 client = gspread.authorize(creds)
 
-# find each datasheet and clear the current values
+# find each datasheet, clear the current values, write new data
+# KTP all-in (no longer used, I think)
 ktp_sheet = client.open("demographic visuals data").worksheet('ktp')
 ktp_sheet.clear()
+gspread_dataframe.set_with_dataframe(ktp_sheet, ktp_data_non_conf)
+
+# write to admissions sheet
 admissions_sheet = client.open("demographic visuals data").worksheet('admissions')
 admissions_sheet.clear()
+gspread_dataframe.set_with_dataframe(admissions_sheet, admissions_data_non_conf)
+print('\nAdmissions dashboard updated.')
+
+# write to the licensure sheet
 licensure_sheet = client.open("demographic visuals data").worksheet('licensure')
-admissions_sheet.clear()
-common_sheet = client.open("demographic visuals data").worksheet('common')
-common_sheet.clear()
+licensure_sheet.clear()
+gspread_dataframe.set_with_dataframe(licensure_sheet, licensure_data_non_conf)
+print('\nLicensure dashboard updated.')
+
+# write to new ventures sheet
 new_ventures_sheet = client.open("demographic visuals data").worksheet('new ventures')
 new_ventures_sheet.clear()
+gspread_dataframe.set_with_dataframe(new_ventures_sheet, new_ventures_data_non_conf)
+print('\nNew Ventures dashboard updated.')
+
+# write to admissions (non faculty) sheet
+admissions_nf_sheet = client.open('Admissions Demographic Dashboard v1.2').worksheet('Admissions NF Data')
+admissions_nf_sheet.clear()
+ad_academics_sheet = client.open('Admissions Demographic Dashboard v1.2').worksheet('Ad Academics NF Data')
+ad_academics_sheet.clear()
+gspread_dataframe.set_with_dataframe(admissions_nf_sheet, admissions_nf_data_non_conf)
+gspread_dataframe.set_with_dataframe(ad_academics_sheet, ad_academics_nf_data_non_conf)
+print('\nAdmissions non faculty dashboard updated.')
+
+# write to the faculty sheet
 faculty_sheet = client.open("demographic visuals data").worksheet('faculty')
 faculty_sheet.clear()
+gspread_dataframe.set_with_dataframe(faculty_sheet, faculty_data)
+print('\nFaculty dashboard updated.')
+
+# write to the common dashboard
+common_teams_sheet = client.open('Common Teams Demographic Dashboard v1.2'). worksheet('common data')
+common_teams_sheet.clear()
+gspread_dataframe.set_with_dataframe(common_teams_sheet, common_data_non_conf)
+
+
+common_no_nxt_sheet = client.open('Common Teams Demographic Dashboard v1.2').worksheet('common data (no nxt)')
+common_no_nxt_sheet.clear()
+gspread_dataframe.set_with_dataframe(common_no_nxt_sheet, common_no_nxt_non_conf)
+print('\nCommon Teams dashboard updated.')
+
 
 # write to the compensation dashboard
 compensation_sheet = client.open("Compensation Dashboard v1.0").worksheet('people data')
 compensation_sheet.clear()
-
-
-# write each of the sheets with new data
-gspread_dataframe.set_with_dataframe(ktp_sheet, ktp_data_non_conf)
-gspread_dataframe.set_with_dataframe(admissions_sheet, admissions_data_non_conf)
-gspread_dataframe.set_with_dataframe(licensure_sheet, licensure_data_non_conf)
-gspread_dataframe.set_with_dataframe(common_sheet, common_data_non_conf)
-gspread_dataframe.set_with_dataframe(new_ventures_sheet, new_ventures_data_non_conf)
-gspread_dataframe.set_with_dataframe(faculty_sheet, faculty_data)
 gspread_dataframe.set_with_dataframe(compensation_sheet, ktp_data_conf)
+print('\nCompensation dashboard updated.')
 
-# todo: update the manager map google sheet with new information
 
+# write to the full records sheet
+raw_records_sheet = client.open("unedited records").worksheet('data')
+raw_records_sheet.clear()
+gspread_dataframe.set_with_dataframe(raw_records_sheet, df0)
+print('\nFull records dashboard updated.')
+
+
+
+# update the manager map google sheet with new information
+map_sheet = client.open('The Map v2').worksheet('population')
+map_sheet.clear()
+gspread_dataframe.set_with_dataframe(map_sheet, ktp_data_non_conf)
+print('\nManager map updated with current population.')
 
 
 # get today's date, again, but format it as mm/dd/yyyy, and include the time
@@ -398,5 +446,15 @@ str_df = str_df[['Structure', 'female', 'male', 'gdr_total', 'pct_female', 'amer
 
 
 # todo: write the D&I indices to a google sheet as backend
+
+# run changing ktp if you're up for it
+update_changes_1 = input('\nRun comparison to previous week for changes? (y/n) ')
+if update_changes_1 == 'y':
+    pass
+elif update_changes_1 == 'n':
+    print('\nProcess finished.')
+    exit()
+
+import changing_ktp
 
 print('\nProcess finished.\n')
