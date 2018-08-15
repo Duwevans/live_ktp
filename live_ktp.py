@@ -200,16 +200,19 @@ pop_mapped['Digital'] = pop_mapped['Team'].map({'Analytics and Digital Marketing
                                                 'Platform': 'Technology', 'UX': 'Technology', 'Website': 'Technology'})
 
 
-
-
 def find_unmatched():
-    """Returns the """
+    """Returns the number of missing values against the manager map, otherwise, saves the record."""
 
     def save_record():
         """creates a copy of the population headcount on the given date in subfolder"""
         new_filename = ('ktp_pop_' + target_date + '.csv')
         os.chdir('C:\\Users\\DuEvans\\Documents\\ktp_data\\population\\ft_ktp')
-        pop_mapped.to_csv(new_filename, index=False)
+
+        # import supervisory org levels 1, 2, 3 with name and EID
+
+        from hierarchy_id_match import hierarchy_id_match
+        hierarchy_id_match(pop_mapped, new_filename)
+
         print('Record archived.')
     if count_na == 0:
         print('All values matched, yay!')
