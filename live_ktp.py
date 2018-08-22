@@ -217,13 +217,14 @@ def find_unmatched():
     if count_na == 0:
         print('All values matched, yay!')
         save_record()
+        os.remove(file)
+
     elif count_na != 0:
         print('Missing entries: ' + str(count_na) + ' employees; ' + str(mgr_missing) + ' managers.')
         for name in na_remaining['Worker\'s Manager(s)'].unique():
             print(name)
         for id in na_remaining['ID'].unique():
             print(id)
-        os.remove(file)
         print('\nExiting...')
         exit()
 
@@ -330,6 +331,11 @@ ktp_sheet = client.open("demographic visuals data").worksheet('ktp')
 ktp_sheet.clear()
 gspread_dataframe.set_with_dataframe(ktp_sheet, ktp_data_non_conf)
 
+ktp_dashboard = client.open('KTP Demographic Dashboard v1.3').worksheet('KTP Data')
+ktp_dashboard.clear()
+gspread_dataframe.set_with_dataframe(ktp_dashboard, ktp_data_non_conf)
+print('\nKTP-wide dashboard updated.')
+
 # write to admissions sheet
 admissions_sheet = client.open("demographic visuals data").worksheet('admissions')
 admissions_sheet.clear()
@@ -411,44 +417,6 @@ last_updated_sheet.update_cell(1,1,last_update)
 
 print('\nDemographic data sets updated in google sheet.')
 
-
-# todo: calculate the gender diversity index for each OU, Group, and Team
-# pop is the ft and formatted data set
-
-print('\nCalculating diversity and gender indices...')
-
-str_gdr = pd.pivot_table(pop, values=['ID'], index=['Structure'], columns=['Gender'], aggfunc=len)
-str_gdr_df = pd.DataFrame(str_gdr.to_records())
-str_gdr_df = str_gdr_df.fillna(0)
-str_gdr_df = str_gdr_df.rename(columns={"('ID', 'Female')": 'female', "('ID', 'Male')": 'male'})
-str_gdr_df['gdr_total'] = str_gdr_df['male'] + str_gdr_df['female']
-
-str_gdr_df['pct_female'] = str_gdr_df['female'] / str_gdr_df['gdr_total']
-
-# todo: calculate the ethnicity diversity index for each OU, Group, and Team
-
-str_eth = pd.pivot_table(pop, values=['ID'], index=['Structure'], columns=['Ethnicity'], aggfunc=len)
-str_eth_df = pd.DataFrame(str_eth.to_records())
-str_eth_df = str_eth_df.fillna(0)
-str_eth_df = str_eth_df.rename(columns={"('ID', 'American Indian')": 'american_indian', "('ID', 'Asian')": 'asian',
-                                        "('ID', 'Black')": 'black', "('ID', 'Hispanic')": 'hispanic',
-                                        "('ID', 'Pacific Islander')": 'pacific_islander', "('ID', 'Two or more')": 'two_or_more',
-                                        "('ID', 'White')": 'white'})
-str_eth_df['eth_total'] = (str_eth_df['american_indian'] + str_eth_df['asian'] + str_eth_df['black'] + str_eth_df['hispanic']\
-                      + str_eth_df['pacific_islander'] + str_eth_df['two_or_more'] + str_eth_df['white'])
-
-str_eth_df['non_white'] = (str_eth_df['american_indian'] + str_eth_df['asian'] + str_eth_df['black']
-                        + str_eth_df['hispanic'] + str_eth_df['pacific_islander'] + str_eth_df['two_or_more'])
-
-str_eth_df['pct_non_white'] = str_eth_df['non_white'] / str_eth_df['eth_total']
-
-str_df = pd.merge(str_eth_df, str_gdr_df, on=['Structure'], how='left')
-
-str_df = str_df[['Structure', 'female', 'male', 'gdr_total', 'pct_female', 'american_indian', 'asian', 'black',
-                 'hispanic', 'pacific_islander', 'two_or_more', 'white', 'eth_total', 'pct_non_white']]
-
-
-# todo: write the D&I indices to a google sheet as backend
 
 # run changing ktp if you're up for it
 update_changes_1 = input('\nRun comparison to previous week for changes? (y/n) ')
