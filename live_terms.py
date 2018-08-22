@@ -1,7 +1,7 @@
 import os
 import pandas as pd
 import datetime
-from datetime import datetime
+from datetime import datetime, timedelta
 import gspread
 import gspread_dataframe
 from gspread_dataframe import set_with_dataframe
@@ -17,7 +17,7 @@ target_date = input('\nWhat is the target date? (mm_dd_yyyy) ')
 file = ('C:\\Users\\DuEvans\\Downloads\\terms_' + target_date + '.xlsx')
 records_date = datetime.strptime(target_date, '%m_%d_%Y')
 
-file = ('C:\\Users\\DuEvans\\Downloads\\terms_08_03_2018.xlsx')
+#file = ('C:\\Users\\DuEvans\\Downloads\\terms_08_03_2018.xlsx')
 
 
 
@@ -184,8 +184,19 @@ new_terms['Digital'] = new_terms['Team'].map({'Analytics and Digital Marketing':
                                                 'Market Research': 'Marketing', 'Marketing Leadership': 'Marketing',
                                                 'Cloud Operations': 'Technology', 'Data Engineering': 'Technology',
                                                 'Delivery Management': 'Technology', 'MPrep Technology': 'Technology',
-                                                'Platform': 'Technology', 'UX': 'Technology', 'Website': 'Technology'})
+                                                'Platform': 'Technology', 'UX': 'Technology', 'Website': 'Technology',
+                                                'Data Science': 'Data Analytics', 'Learning Science': 'Analytics',
+                                                'Psychometrics': 'Data Analytics'})
 
+
+new_terms['Digital B'] = new_terms['Team'].map({'Analytics and Digital Marketing': 'Digital',
+                                                'Email Marketing': 'Digital', 'Growth': 'Digital',
+                                                'Market Research': 'Digital', 'Marketing Leadership': 'Digital',
+                                                'Cloud Operations': 'Digital', 'Data Engineering': 'Digital',
+                                                'Delivery Management': 'Digital', 'MPrep Technology': 'Digital',
+                                                'Platform': 'Digital', 'UX': 'Digital', 'Website': 'Digital',
+                                                'Data Science': 'Digital', 'Learning Science': 'Digital',
+                                                'Psychometrics': 'Digital'})
 
 # find the RIFs
 
@@ -217,6 +228,12 @@ all_terms.to_csv('historic_terms.csv', index=False)
 
 # todo: create a separate frame of the rolling 12 month headcount metrics
 
+#roll_12_date = records_date - timedelta(days=365)
+
+#df_roll_12_terms = all_terms.loc[all_terms['Termination Date'] > roll_12_date]
+#all_terms['roll_12_date'] = roll_12_date
+#pd.to_datetime(all_terms['roll_12_date'])
+#df_roll_12_terms = all_terms.loc[all_terms['roll_12_date'] > roll_12_date]
 
 # isolate and save full time terms to a spreadsheet
 
