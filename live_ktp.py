@@ -197,8 +197,29 @@ pop_mapped['Digital'] = pop_mapped['Team'].map({'Analytics and Digital Marketing
                                                 'Market Research': 'Marketing', 'Marketing Leadership': 'Marketing',
                                                 'Cloud Operations': 'Technology', 'Data Engineering': 'Technology',
                                                 'Delivery Management': 'Technology', 'MPrep Technology': 'Technology',
-                                                'Platform': 'Technology', 'UX': 'Technology', 'Website': 'Technology'})
+                                                'Platform': 'Technology', 'UX': 'Technology', 'Website': 'Technology',
+                                                'Data Science': 'Data Analytics', 'Learning Science': 'Analytics',
+                                                'Psychometrics': 'Data Analytics'})
 
+pop_mapped['Digital B'] = pop_mapped['Team'].map({'Analytics and Digital Marketing': 'Digital',
+                                                'Email Marketing': 'Digital', 'Growth': 'Digital',
+                                                'Market Research': 'Digital', 'Marketing Leadership': 'Digital',
+                                                'Cloud Operations': 'Digital', 'Data Engineering': 'Digital',
+                                                'Delivery Management': 'Digital', 'MPrep Technology': 'Digital',
+                                                'Platform': 'Digital', 'UX': 'Digital', 'Website': 'Digital',
+                                                'Data Science': 'Digital', 'Learning Science': 'Digital',
+                                                'Psychometrics': 'Digital'})
+
+# map individuals to person of color
+pop_mapped['di_poc'] = pop_mapped['Ethnicity'].map({'White': 'n_poc', 'Black': 'poc', 'Hispanic': 'poc',
+                                                    'Asian': 'poc', 'Two or more': 'poc', 'American Indian': 'poc',
+                                                    'Pacific Islander': 'poc'})
+
+# map leader/non-leader
+pop_mapped['di_leader'] = pop_mapped['Management Level1'].map({'Individual Contributor': 'n_leader',
+                                                               'Manager': 'leader', 'Director': 'leader',
+                                                               'Executive Director': 'leader', 'VP': 'leader',
+                                                               'Above VP': 'leader'})
 
 def find_unmatched():
     """Returns the number of missing values against the manager map, otherwise, saves the record."""
@@ -258,6 +279,7 @@ licensure_data_non_conf = pop_non_conf.loc[pop_non_conf['Structure'].isin(['Lice
 common_data_non_conf = pop_non_conf.loc[pop_non_conf['Structure'].isin(['Common'])]
 common_no_nxt_non_conf = common_data_non_conf.loc[~common_data_non_conf['Team'].isin(['NXT Service', 'NXT Shared', 'Balance Resolution', 'SST'])]
 new_ventures_data_non_conf = pop_non_conf.loc[pop_non_conf['Structure'].isin(['New Ventures'])]
+prepare_data_non_conf = pop_non_conf.loc[pop_non_conf['Prepare/New A'] == 'Prepare']
 
 ktp_data_conf = pop_conf.loc[pop_conf['Structure'].isin(['Admissions', 'Licensure', 'Common', 'New Ventures', 'Executive'])]
 
@@ -318,9 +340,10 @@ elif update_sheets == 'n':
 
 print('\nHear me, oh Great Google overseers...')
 
-os.chdir('C:\\Users\\DuEvans\\Documents\\ktp_data')
 
 # use creds to create a client to interact with the Google Drive API
+os.chdir('C:\\Users\\DuEvans\\Documents\\ktp_data')
+
 scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
 creds = ServiceAccountCredentials.from_json_keyfile_name('client_secret.json', scope)
 client = gspread.authorize(creds)
@@ -333,7 +356,7 @@ gspread_dataframe.set_with_dataframe(ktp_sheet, ktp_data_non_conf)
 
 ktp_dashboard = client.open('KTP Demographic Dashboard v1.3').worksheet('KTP Data')
 ktp_dashboard.clear()
-gspread_dataframe.set_with_dataframe(ktp_dashboard, ktp_data_non_conf)
+gspread_dataframe.set_with_dataframe(ktp_dashboard, prepare_data_non_conf)
 print('\nKTP-wide dashboard updated.')
 
 # write to admissions sheet
