@@ -221,6 +221,21 @@ pop_mapped['di_leader'] = pop_mapped['Management Level1'].map({'Individual Contr
                                                                'Executive Director': 'leader', 'VP': 'leader',
                                                                'Above VP': 'leader'})
 
+# map group column to create new group labels that excludes the nxt in common
+pop_mapped['Structure B'] = pop_mapped['Group'].map({'Admissions Group': 'Admissions', 'Technology': 'Common',
+                                                       'NXT': 'NXT', 'Licensure Group': 'Licensure',
+                                                       'Med': 'Licensure', 'Finance & Accounting': 'Common',
+                                                       'Admissions Faculty': 'Admissions', 'Nursing': 'Licensure',
+                                                       'MPrep': 'Admissions', 'Marketing': 'Common', 'Bar': 'Licensure',
+                                                       'HR / PR / Admin': 'Common', 'Publishing': 'Common',
+                                                       'Data and Learning Science': 'Common', 'Metis': 'New Ventures',
+                                                       'Digital Media': 'Common', 'iHuman': 'New Ventures',
+                                                       'Advise': 'Advise', 'International': 'Licensure',
+                                                       'Metis Faculty': 'New Ventures', 'Admissions Core': 'Admissions',
+                                                       'Admissions New': 'Admissions', 'Allied Health': 'Licensure',
+                                                       'Legal': 'Common', 'TTL Labs': 'New Ventures', 'Executive': 'Common',
+                                                       'Licensure Programs': 'Licensure'})
+
 def find_unmatched():
     """Returns the number of missing values against the manager map, otherwise, saves the record."""
 
@@ -290,8 +305,6 @@ print('\nKTP full time employees mapped.')
 part_time = df0['FT / PT'] == 'Part time'
 pt_data = df0[part_time]
 
-# map ethnicity
-
 
 # find the faculty based on job profile
 faculty_data = pt_data.loc[pt_data['Job Profile (Primary)'].isin(['Instructor - Grad / COA PT', 'Instructor - PC PT', 'Instructor - NCLEX',
@@ -320,10 +333,15 @@ faculty_data['Age'] = (faculty_data['days_old']/365).round(0)
 
 faculty_filename = ('ktp_faculty_' + target_date + '.csv')
 os.chdir('C:\\Users\\DuEvans\\Documents\\ktp_data\\population\\faculty')
-pop_mapped.to_csv(faculty_filename, index=False)
+faculty_data.to_csv(faculty_filename, index=False)
 print('Faculty records archived.')
 
+# create pivoted headcount on Structure B for turnover dashboard
+turnover_hc = pd.pivot_table(pop_mapped, values=['ID'], index='Structure B', aggfunc=len)
+turnover_hc = pd.DataFrame(turnover_hc.to_records())
 
+digital_hc = pd.pivot_table(pop_mapped, values=['ID'], index='Digital', aggfunc=len)
+digital_hc = pd.DataFrame(digital_hc.to_records())
 
 # make sure google sheet should be updated
 # important to allow for 'n' input as I might be fixing past records
@@ -358,6 +376,21 @@ ktp_dashboard = client.open('KTP Demographic Dashboard v1.3').worksheet('KTP Dat
 ktp_dashboard.clear()
 gspread_dataframe.set_with_dataframe(ktp_dashboard, prepare_data_non_conf)
 print('\nKTP-wide dashboard updated.')
+
+di_progress = client.open('D&I Progress v1.0').worksheet('Prepare Today')
+di_progress.clear()
+gspread_dataframe.set_with_dataframe(di_progress, prepare_data_non_conf)
+print('\nD&I Progress Dashboard updated.')
+
+# update terminations dashboard with pivoted 'Structure B' data
+turnover_sheet = client.open('Prepare Turnover Dashboard v1.0').worksheet('Today Headcount')
+turnover_sheet.clear()
+gspread_dataframe.set_with_dataframe(turnover_sheet, turnover_hc)
+
+digital_sheet = client.open('Prepare Turnover Dashboard v1.0').worksheet('Digital Headcount')
+digital_sheet.clear()
+gspread_dataframe.set_with_dataframe(digital_sheet, digital_hc)
+print('\nTurnover dashboard updated.')
 
 # write to admissions sheet
 admissions_sheet = client.open("demographic visuals data").worksheet('admissions')
