@@ -6,6 +6,7 @@ import gspread
 import gspread_dataframe
 from gspread_dataframe import set_with_dataframe
 from oauth2client.service_account import ServiceAccountCredentials
+pd.options.mode.chained_assignment = None  # default='warn'
 
 
 os.chdir('C:\\Users\\DuEvans\\Documents\\ktp_data')
@@ -14,9 +15,12 @@ os.chdir('C:\\Users\\DuEvans\\Documents\\ktp_data')
 
 target_date = input('\nWhat is the target date? (mm_dd_yyyy) ')
 
+ref_date = input('\nWhat is the date to match back to the population? (mm_dd_yyyy) ')
+
 file = ('C:\\Users\\DuEvans\\Downloads\\terms_' + target_date + '.xlsx')
 records_date = datetime.strptime(target_date, '%m_%d_%Y')
 
+ref_file = ('C:\\Users\\DuEvans\\Documents\\ktp_data\\population\\ft_ktp\\ktp_pop_' + ref_date + '.csv')
 #file = ('C:\\Users\\DuEvans\\Downloads\\terms_08_03_2018.xlsx')
 
 
@@ -111,6 +115,8 @@ records_sheet = client.open("unedited records").worksheet('data')
 df_demo = pd.DataFrame(records_sheet.get_all_records())
 demographics = df_demo[['ID', 'Gender', 'Date of Birth (Locale Sensitive)', 'Race/Ethnicity (Locale Sensitive)']]
 
+df_demo = pd.read_csv(ref_file)
+
 # merge demographic information to the new terms
 new_terms = pd.merge(new_terms, demographics, on=['ID'], how='left')
 
@@ -124,6 +130,7 @@ new_terms['yrs_old_at_term'] = (new_terms['days_old_at_term'] / 365).round(0)
 # set tenure at termination
 new_terms['doh'] = pd.to_datetime(new_terms['Hire Date'])
 new_terms['days_tenure_at_term'] = (records_date - (new_terms['doh'])).dt.days
+new_terms['yrs_tenure_at_term'] = (new_terms['days_tenure_at_term'] / 365).round(2)
 
 
 # map management levels
@@ -198,6 +205,20 @@ new_terms['Digital B'] = new_terms['Team'].map({'Analytics and Digital Marketing
                                                 'Data Science': 'Digital', 'Learning Science': 'Digital',
                                                 'Psychometrics': 'Digital'})
 
+new_terms['Structure B'] = new_terms['Group'].map({'Admissions Group': 'Admissions', 'Technology': 'Common',
+                                                       'NXT': 'NXT', 'Licensure Group': 'Licensure',
+                                                       'Med': 'Licensure', 'Finance & Accounting': 'Common',
+                                                       'Admissions Faculty': 'Admissions', 'Nursing': 'Licensure',
+                                                       'MPrep': 'Admissions', 'Marketing': 'Common', 'Bar': 'Licensure',
+                                                       'HR / PR / Admin': 'Common', 'Publishing': 'Common',
+                                                       'Data and Learning Science': 'Common', 'Metis': 'New Ventures',
+                                                       'Digital Media': 'Common', 'iHuman': 'New Ventures',
+                                                       'Advise': 'Advise', 'International': 'Licensure',
+                                                       'Metis Faculty': 'New Ventures', 'Admissions Core': 'Admissions',
+                                                       'Admissions New': 'Admissions', 'Allied Health': 'Licensure',
+                                                       'Legal': 'Common', 'TTL Labs': 'New Ventures', 'Executive': 'Common',
+                                                       'Licensure Programs': 'Licensure'})
+
 # find the RIFs
 
 rifs1 = new_terms.loc[new_terms['Primary Termination Reason'] == 'Terminate Employee > Involuntary > Elimination of Position']
@@ -218,30 +239,59 @@ all_terms = old_terms.append(new_terms, sort=False)
 
 all_terms.pop('Organization Assignments')
 
+all_terms.drop_duplicates()
+
+# map the termination category field into something usable
+all_terms['Term Type'] = all_terms['Termination Category'].map({'Terminate Employee > Voluntary': 'vol',
+                                                                'Terminate Employee > Involuntary': 'invol'})
+
 # save the updated termination spreadsheet
 
 os.chdir('C:\\Users\\DuEvans\\Documents\\ktp_data\\terminations\\')
 all_terms.to_csv('historic_terms.csv', index=False)
 
+
+
+
 # todo: run the termination prediction stuff
 
-
-# todo: create a separate frame of the rolling 12 month headcount metrics
-
-#roll_12_date = records_date - timedelta(days=365)
-
-#df_roll_12_terms = all_terms.loc[all_terms['Termination Date'] > roll_12_date]
-#all_terms['roll_12_date'] = roll_12_date
-#pd.to_datetime(all_terms['roll_12_date'])
-#df_roll_12_terms = all_terms.loc[all_terms['roll_12_date'] > roll_12_date]
 
 # isolate and save full time terms to a spreadsheet
 
 ft_flt = all_terms['Time Type'] == 'Full time'
 ft_terms = all_terms[ft_flt]
+ft_terms.drop_duplicates()
 ft_terms.to_csv('historic_terms_ft.csv', index=False)
 
-# send full time terms to a good spreadsheet
+# for sending to google sheets
+terms0 = pd.read_csv('C:\\Users\\DuEvans\\Documents\\ktp_data\\terminations\\historic_terms_ft.csv', encoding='latin1')
+terms0['Termination Date'] = pd.to_datetime(terms0['Termination Date'])
+terms_prepare = terms0.loc[terms0['Prepare/New A'] == 'Prepare']
+
+# todo: create a separate frame of the rolling 12 month headcount metrics
+
+records_date = pd.to_datetime(records_date)
+roll_12_date = records_date - timedelta(days=365)
+
+terms_roll_12 = terms_prepare.loc[terms_prepare['Termination Date'] > roll_12_date]
+
+# create a separate frame for 2017
+terms1 = terms_prepare.loc[terms_prepare['Termination Date'] > '12/31/2016']
+terms2017 = terms1.loc[terms1['Termination Date'] < '01/01/2018']
+
+# todo: create a separate frame for 2018
+terms2018 = terms_prepare.loc[terms_prepare['Termination Date'] > '12/31/2017']
+
+
+# todo: create a non-confidential termination dataset for all the same cuts
+noncf_columns = ['Gender', 'Race/Ethnicity (Locale Sensitive)', 'Date of Birth (Locale Sensitive)',
+                 'Total Pay - Amount', 'dob', 'days_old_at_term', 'yrs_old_at_term',
+                 'Ethnicity']
+terms2017_noncf = terms2017.drop(columns=noncf_columns)
+terms2018_noncf =terms2018.drop(columns=noncf_columns)
+terms_roll_12_noncf = terms_roll_12.drop(columns=noncf_columns)
+
+# send all cuts of terminations to a confidential spreadsheet
 
 from oauth2client.service_account import ServiceAccountCredentials
 
@@ -253,9 +303,22 @@ scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/au
 creds = ServiceAccountCredentials.from_json_keyfile_name('client_secret.json', scope)
 client = gspread.authorize(creds)
 
-# find each datasheet and clear the current values
-sheet = client.open("KTP Turnover Dashboard v1.0").worksheet('data')
-sheet.clear()
+
+# non_confidential dashbaord
+noncf_2017_sheet = client.open('Prepare Turnover Dashboard v1.0').worksheet('2017 Data')
+noncf_2017_sheet.clear()
+gspread_dataframe.set_with_dataframe(noncf_2017_sheet, terms2017_noncf)
+
+noncf_2018_sheet = client.open('Prepare Turnover Dashboard v1.0').worksheet('2018 Data')
+noncf_2018_sheet.clear()
+gspread_dataframe.set_with_dataframe(noncf_2018_sheet, terms2018_noncf)
+
+noncf_rolling_sheet = client.open('Prepare Turnover Dashboard v1.0').worksheet('Rolling 12 Data')
+noncf_rolling_sheet.clear()
+gspread_dataframe.set_with_dataframe(noncf_rolling_sheet, terms_roll_12_noncf)
+print('\nER team dashboard updated.')
+
+
 
 # write each of the sheets with new data
 gspread_dataframe.set_with_dataframe(sheet, ft_terms)
