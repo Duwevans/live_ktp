@@ -8,6 +8,9 @@ import os
 from datetime import datetime
 from datetime import date
 from sys import exit
+from oauth2client.service_account import ServiceAccountCredentials
+from data_tagging import *
+
 
 pd.options.mode.chained_assignment = None  # default='warn'
 
@@ -104,7 +107,7 @@ pop_mapped['days_old'] = (records_date - (pop_mapped['Date of Birth (Locale Sens
 pop_mapped['Age'] = (pop_mapped['days_old']/365).round(0)
 
 # bin age into age ranges
-age_bin_names = ['<25', '25 to 34', '35 to 44', '45 to 54', '55 to 64', '65+']
+age_bin_names = ['18 to 24', '25 to 34', '35 to 44', '45 to 54', '55 to 64', '65+']
 age_bins = [18, 24, 34, 44, 54, 64, 100]
 pop_mapped['Age Bracket'] = pd.cut(pop_mapped['Age'], age_bins, labels=age_bin_names)
 
@@ -156,6 +159,8 @@ pop_mapped.loc[pop_mapped['ID'] == 'P000238419', 'Management Level1'] = 'VP'
 pop_mapped.loc[pop_mapped['ID'] == 'P000018502', 'Management Level1'] = 'VP'
 pop_mapped.loc[pop_mapped['ID'] == 'P000055603', 'Management Level1'] = 'VP'
 pop_mapped.loc[pop_mapped['ID'] == 'P000025952', 'Gender'] = 'Male'
+pop_mapped.loc[pop_mapped['ID'] == 'P000025952', 'Structure'] = 'Common'
+pop_mapped.loc[pop_mapped['ID'] == 'P000025952', 'Team'] = 'CEO'
 
 
 # label everything as either 'Prepare' or 'New'
@@ -192,23 +197,7 @@ pop_mapped['Prepare/New B'] = pop_mapped['Group'].map({'Admissions Group': 'Prep
 
 # label everything into current digital/technology/marketing roles
 
-pop_mapped['Digital'] = pop_mapped['Team'].map({'Analytics and Digital Marketing': 'Marketing',
-                                                'Email Marketing': 'Marketing', 'Growth': 'Marketing',
-                                                'Market Research': 'Marketing', 'Marketing Leadership': 'Marketing',
-                                                'Cloud Operations': 'Technology', 'Data Engineering': 'Technology',
-                                                'Delivery Management': 'Technology', 'MPrep Technology': 'Technology',
-                                                'Platform': 'Technology', 'UX': 'Technology', 'Website': 'Technology',
-                                                'Data Science': 'Data Analytics', 'Learning Science': 'Analytics',
-                                                'Psychometrics': 'Data Analytics'})
-
-pop_mapped['Digital B'] = pop_mapped['Team'].map({'Analytics and Digital Marketing': 'Digital',
-                                                'Email Marketing': 'Digital', 'Growth': 'Digital',
-                                                'Market Research': 'Digital', 'Marketing Leadership': 'Digital',
-                                                'Cloud Operations': 'Digital', 'Data Engineering': 'Digital',
-                                                'Delivery Management': 'Digital', 'MPrep Technology': 'Digital',
-                                                'Platform': 'Digital', 'UX': 'Digital', 'Website': 'Digital',
-                                                'Data Science': 'Digital', 'Learning Science': 'Digital',
-                                                'Psychometrics': 'Digital'})
+pop_mapped = digital_map(pop_mapped)
 
 # map individuals to person of color
 pop_mapped['di_poc'] = pop_mapped['Ethnicity'].map({'White': 'n_poc', 'Black': 'poc', 'Hispanic': 'poc',
@@ -218,8 +207,8 @@ pop_mapped['di_poc'] = pop_mapped['Ethnicity'].map({'White': 'n_poc', 'Black': '
 # map leader/non-leader
 pop_mapped['di_leader'] = pop_mapped['Management Level1'].map({'Individual Contributor': 'n_leader',
                                                                'Manager': 'leader', 'Director': 'leader',
-                                                               'Executive Director': 'leader', 'VP': 'leader',
-                                                               'Above VP': 'leader'})
+                                                               'Executive Director': 'sr_leader', 'VP': 'sr_leader',
+                                                               'Above VP': 'sr_leader'})
 
 # map group column to create new group labels that excludes the nxt in common
 pop_mapped['Structure B'] = pop_mapped['Group'].map({'Admissions Group': 'Admissions', 'Technology': 'Common',
@@ -253,7 +242,6 @@ def find_unmatched():
     if count_na == 0:
         print('All values matched, yay!')
         save_record()
-        os.remove(file)
 
     elif count_na != 0:
         print('Missing entries: ' + str(count_na) + ' employees; ' + str(mgr_missing) + ' managers.')
@@ -267,9 +255,48 @@ def find_unmatched():
 find_unmatched()
 
 
+# update one historic record labeled by date
+
+def update_historic_records(target_date):
+    """
+    updates the full time population records tagged by date
+    :param target_date:
+    :return:
+    """
+    os.chdir('C:\\Users\\DuEvans\\Documents\\ktp_data\\population\\ft_ktp')
+    new_filename = ('C:\\Users\\DuEvans\\Documents\\ktp_data\\population\\ft_ktp\\ktp_pop_' + target_date + '.csv')
+    new_pop = pd.read_csv(new_filename, encoding='latin1')
+
+    records_date = datetime.strptime(target_date, '%m_%d_%Y')
+
+    new_pop['record_date'] = records_date
+
+    new_pop['record_date'] = pd.to_datetime(new_pop['record_date'])
+
+    # read the historic file
+    #new_pop.to_csv('ktp_pop_ft_records.csv', index=False)
+    df_hist = pd.read_csv('C:\\Users\\DuEvans\\Documents\\ktp_data\\population\\ft_ktp\\ktp_pop_ft_records.csv',
+                          encoding='latin1')
+
+    # append the historic file
+    df_hist = df_hist.append(new_pop, sort=False)
+
+    # save the updated record
+    df_hist.to_csv('ktp_pop_ft_records.csv')
+
+    print('\nHistoric full time file appended with ' + str(target_date) + ' data.')
+
+# prompt history update
+update_history = input('\nUpdate historic full time population file? (y/n) ')
+if update_history == 'y':
+    update_historic_records(target_date)
+elif update_history == 'n':
+    pass
+
+
+
 # send the data to a google spread sheet
 
-from oauth2client.service_account import ServiceAccountCredentials
 
 os.chdir('C:\\Users\\DuEvans\\Documents\\ktp_data')
 pop = pd.read_csv('C:\\Users\\DuEvans\\Documents\\ktp_data\\population\\ft_ktp\\ktp_pop_' + target_date + '.csv')
@@ -301,51 +328,27 @@ ktp_data_conf = pop_conf.loc[pop_conf['Structure'].isin(['Admissions', 'Licensur
 
 print('\nKTP full time employees mapped.')
 
-# organize the part time faculty
-part_time = df0['FT / PT'] == 'Part time'
-pt_data = df0[part_time]
+
 
 
 # find the faculty based on job profile
-faculty_data = pt_data.loc[pt_data['Job Profile (Primary)'].isin(['Instructor - Grad / COA PT', 'Instructor - PC PT', 'Instructor - NCLEX',
-                                                                  'Instructor - Grad Canada PT', 'Instructor - Mprep', 'KTP UK Instructor'])]
+faculty_data = pop_non_conf.loc[pop_non_conf['Job Profile (Primary)'].isin(['Instructor - Grad / COA PT', 'Instructor - PC PT', 'Instructor - NCLEX',
+                                                                  'Instructor - Grad Canada PT', 'Instructor - Mprep', 'KTP UK Instructor',
+                                                                  'Instructor - Grad / COA FT', 'Instructor - Grad Canada FT',
+                                                                  'Instructor - PC FT', 'Instructor - PC K12'])]
 
-# remove compensation information
-faculty_data.pop('Total Base Pay - Amount')
-faculty_data.pop('Total Base Pay Annualized - Amount')
 
-faculty_data['Ethnicity'] = faculty_data['Race/Ethnicity (Locale Sensitive)'].map({'White (Not Hispanic or Latino) (United States of America)': 'White',
-                                    'Asian (Not Hispanic or Latino) (United States of America)': 'Asian',
-                                    'Black or African American (Not Hispanic or Latino) (United States of America)': 'Black',
-                                    'Hispanic or Latino (United States of America)': 'Hispanic',
-                                    'Two or More Races (Not Hispanic or Latino) (United States of America)': 'Two or more',
-                                    'White - Other (United Kingdom)': 'White',
-                                    'White - Other European (United Kingdom)': 'White',
-                                    'Asian (Indian) (India)': 'Asian',
-                                    'Black - African (United Kingdom)': 'Black',
-                                    'American Indian or Alaska Native (Not Hispanic or Latino) (United States of America)': 'American Indian',
-                                    'White - British (United Kingdom)': 'White',
-                                    'Native Hawaiian or Other Pacific Islander (Not Hispanic or Latino) (United States of America)': 'Pacific Islander'})
-
-faculty_data['days_old'] = (records_date - (faculty_data['Date of Birth (Locale Sensitive)'])).dt.days
-
-faculty_data['Age'] = (faculty_data['days_old']/365).round(0)
-
-faculty_filename = ('ktp_faculty_' + target_date + '.csv')
-os.chdir('C:\\Users\\DuEvans\\Documents\\ktp_data\\population\\faculty')
-faculty_data.to_csv(faculty_filename, index=False)
-print('Faculty records archived.')
 
 # create pivoted headcount on Structure B for turnover dashboard
 turnover_hc = pd.pivot_table(pop_mapped, values=['ID'], index='Structure B', aggfunc=len)
 turnover_hc = pd.DataFrame(turnover_hc.to_records())
 
-digital_hc = pd.pivot_table(pop_mapped, values=['ID'], index='Digital', aggfunc=len)
+digital_hc = pd.pivot_table(pop_mapped, values=['ID'], index='Digital A', aggfunc=len)
 digital_hc = pd.DataFrame(digital_hc.to_records())
 
 # make sure google sheet should be updated
 # important to allow for 'n' input as I might be fixing past records
-update_sheets = input('\nUpdate google spreadsheets? (y/n) ')
+update_sheets = input('\nUpdate current population google spreadsheets? (y/n) ')
 if update_sheets == 'y':
     pass
 elif update_sheets == 'n':
@@ -368,11 +371,11 @@ client = gspread.authorize(creds)
 
 # find each datasheet, clear the current values, write new data
 # KTP all-in (no longer used, I think)
-ktp_sheet = client.open("demographic visuals data").worksheet('ktp')
-ktp_sheet.clear()
-gspread_dataframe.set_with_dataframe(ktp_sheet, ktp_data_non_conf)
+#ktp_sheet = client.open("demographic visuals data").worksheet('ktp')
+#ktp_sheet.clear()
+#gspread_dataframe.set_with_dataframe(ktp_sheet, ktp_data_non_conf)
 
-ktp_dashboard = client.open('KTP Demographic Dashboard v1.3').worksheet('KTP Data')
+ktp_dashboard = client.open('Prepare Demographic Dashboard v1.3').worksheet('KTP Data')
 ktp_dashboard.clear()
 gspread_dataframe.set_with_dataframe(ktp_dashboard, prepare_data_non_conf)
 print('\nKTP-wide dashboard updated.')
@@ -380,6 +383,10 @@ print('\nKTP-wide dashboard updated.')
 di_progress = client.open('D&I Progress v1.0').worksheet('Prepare Today')
 di_progress.clear()
 gspread_dataframe.set_with_dataframe(di_progress, prepare_data_non_conf)
+
+di_progress_draft = client.open('D&I Progress v1.1').worksheet('Prepare Today')
+di_progress_draft.clear()
+gspread_dataframe.set_with_dataframe(di_progress_draft, prepare_data_non_conf)
 print('\nD&I Progress Dashboard updated.')
 
 # update terminations dashboard with pivoted 'Structure B' data
@@ -393,62 +400,66 @@ gspread_dataframe.set_with_dataframe(digital_sheet, digital_hc)
 print('\nTurnover dashboard updated.')
 
 # write to admissions sheet
-admissions_sheet = client.open("demographic visuals data").worksheet('admissions')
-admissions_sheet.clear()
-gspread_dataframe.set_with_dataframe(admissions_sheet, admissions_data_non_conf)
-print('\nAdmissions dashboard updated.')
+#admissions_sheet = client.open("demographic visuals data").worksheet('admissions')
+#admissions_sheet.clear()
+#gspread_dataframe.set_with_dataframe(admissions_sheet, admissions_data_non_conf)
+#print('\nAdmissions dashboard updated.')
+
+from updated_admissions_faculty import update_admissions_dashboard
+
+update_admissions_dashboard(target_date, records_date)
 
 # write to the licensure sheet
-licensure_sheet = client.open("demographic visuals data").worksheet('licensure')
-licensure_sheet.clear()
-gspread_dataframe.set_with_dataframe(licensure_sheet, licensure_data_non_conf)
-print('\nLicensure dashboard updated.')
+#licensure_sheet = client.open("demographic visuals data").worksheet('licensure')
+#licensure_sheet.clear()
+#gspread_dataframe.set_with_dataframe(licensure_sheet, licensure_data_non_conf)
+#print('\nLicensure dashboard updated.')
 
 # write to new ventures sheet
-new_ventures_sheet = client.open("demographic visuals data").worksheet('new ventures')
-new_ventures_sheet.clear()
-gspread_dataframe.set_with_dataframe(new_ventures_sheet, new_ventures_data_non_conf)
-print('\nNew Ventures dashboard updated.')
+#new_ventures_sheet = client.open("demographic visuals data").worksheet('new ventures')
+#new_ventures_sheet.clear()
+#gspread_dataframe.set_with_dataframe(new_ventures_sheet, new_ventures_data_non_conf)
+#print('\nNew Ventures dashboard updated.')
 
 # write to admissions (non faculty) sheet
-admissions_nf_sheet = client.open('Admissions Demographic Dashboard v1.2').worksheet('Admissions NF Data')
-admissions_nf_sheet.clear()
-ad_academics_sheet = client.open('Admissions Demographic Dashboard v1.2').worksheet('Ad Academics NF Data')
-ad_academics_sheet.clear()
-gspread_dataframe.set_with_dataframe(admissions_nf_sheet, admissions_nf_data_non_conf)
-gspread_dataframe.set_with_dataframe(ad_academics_sheet, ad_academics_nf_data_non_conf)
-print('\nAdmissions non faculty dashboard updated.')
+#admissions_nf_sheet = client.open('Admissions Demographic Dashboard v1.2').worksheet('Admissions NF Data')
+#admissions_nf_sheet.clear()
+#ad_academics_sheet = client.open('Admissions Demographic Dashboard v1.2').worksheet('Ad Academics NF Data')
+#ad_academics_sheet.clear()
+##gspread_dataframe.set_with_dataframe(admissions_nf_sheet, admissions_nf_data_non_conf)
+#gspread_dataframe.set_with_dataframe(ad_academics_sheet, ad_academics_nf_data_non_conf)
+#print('\nAdmissions non faculty dashboard updated.')
 
 # write to the faculty sheet
-faculty_sheet = client.open("demographic visuals data").worksheet('faculty')
-faculty_sheet.clear()
-gspread_dataframe.set_with_dataframe(faculty_sheet, faculty_data)
-print('\nFaculty dashboard updated.')
+#faculty_sheet = client.open("demographic visuals data").worksheet('faculty')
+#faculty_sheet.clear()
+#gspread_dataframe.set_with_dataframe(faculty_sheet, faculty_data)
+#print('\nFaculty dashboard updated.')
 
 # write to the common dashboard
-common_teams_sheet = client.open('Common Teams Demographic Dashboard v1.2'). worksheet('common data')
-common_teams_sheet.clear()
-gspread_dataframe.set_with_dataframe(common_teams_sheet, common_data_non_conf)
+#common_teams_sheet = client.open('Common Teams Demographic Dashboard v1.2'). worksheet('common data')
+#common_teams_sheet.clear()
+#gspread_dataframe.set_with_dataframe(common_teams_sheet, common_data_non_conf)
 
 
-common_no_nxt_sheet = client.open('Common Teams Demographic Dashboard v1.2').worksheet('common data (no nxt)')
-common_no_nxt_sheet.clear()
-gspread_dataframe.set_with_dataframe(common_no_nxt_sheet, common_no_nxt_non_conf)
-print('\nCommon Teams dashboard updated.')
+##common_no_nxt_sheet = client.open('Common Teams Demographic Dashboard v1.2').worksheet('common data (no nxt)')
+#common_no_nxt_sheet.clear()
+#gspread_dataframe.set_with_dataframe(common_no_nxt_sheet, common_no_nxt_non_conf)
+#print('\nCommon Teams dashboard updated.')
 
 
 # write to the compensation dashboard
-compensation_sheet = client.open("Compensation Dashboard v1.0").worksheet('people data')
-compensation_sheet.clear()
-gspread_dataframe.set_with_dataframe(compensation_sheet, ktp_data_conf)
-print('\nCompensation dashboard updated.')
+#compensation_sheet = client.open("Compensation Dashboard v1.0").worksheet('people data')
+#compensation_sheet.clear()
+#gspread_dataframe.set_with_dataframe(compensation_sheet, ktp_data_conf)
+#print('\nCompensation dashboard updated.')
 
 
 # write to the full records sheet
-raw_records_sheet = client.open("unedited records").worksheet('data')
-raw_records_sheet.clear()
-gspread_dataframe.set_with_dataframe(raw_records_sheet, df0)
-print('\nFull records dashboard updated.')
+#raw_records_sheet = client.open("unedited records").worksheet('data')
+#raw_records_sheet.clear()
+#gspread_dataframe.set_with_dataframe(raw_records_sheet, df0)
+#print('\nFull records dashboard updated.')
 
 
 
@@ -475,7 +486,7 @@ print('\nDemographic data sets updated in google sheet.')
 
 
 # run changing ktp if you're up for it
-update_changes_1 = input('\nRun comparison to previous week for changes? (y/n) ')
+update_changes_1 = input('\nRun comparison to previous date for changes? (y/n) ')
 if update_changes_1 == 'y':
     pass
 elif update_changes_1 == 'n':
@@ -484,4 +495,3 @@ elif update_changes_1 == 'n':
 
 import changing_ktp
 
-print('\nProcess finished.\n')
