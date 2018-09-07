@@ -6,6 +6,8 @@ import gspread
 import gspread_dataframe
 from gspread_dataframe import set_with_dataframe
 from oauth2client.service_account import ServiceAccountCredentials
+from data_tagging import *
+
 pd.options.mode.chained_assignment = None  # default='warn'
 
 
@@ -46,9 +48,9 @@ old_set['Present'] = 'A'
 
 # merge back to the dataframe and flag those where value was not present in both
 find_new = pd.merge(new_terms, old_set, on=['ID'], how='left', indicator=True)
-find_new['_merge'] =='left_only'
+find_new['_merge'] == 'left_only'
 
-new_terms = find_new.loc[find_new['_merge'] =='left_only']
+new_terms = find_new.loc[find_new['_merge'] == 'left_only']
 print('\nLength of new termination list: ')
 print(len(new_terms))
 
@@ -62,60 +64,19 @@ new_terms = new_terms.drop(['_merge', 'Present'], axis=1)
 
 #  get that good old manager key in here
 
-# read the manager key
-mgr_key = pd.read_csv('C:\\Users\\DuEvans\\Documents\\ktp_data\\mgr_key\\meid_key.csv')
-# read the eid key
-eeid_key = pd.read_csv('C:\\Users\\DuEvans\\Documents\\ktp_data\\mgr_key\\eid_key.csv')
-# format the eid key to match the manager map
-eeid_key.columns = ['Name', 'ID', 'Structure', 'Group', 'Team']
-new_terms = pd.merge(new_terms, mgr_key, on='Manager ID', how='left', sort=False)
+new_terms = manager_map(new_terms)
 
 
 # map against BRM categories
-# create the needed field to map to BRM
-new_terms['_1'] = new_terms['Cost Center'].str[:6]
-new_terms['_2'] = new_terms['_1'].str[:2]
-new_terms['_3'] = new_terms['_1'].str[-4:]
-new_terms['_4'] = (new_terms['_2'] + "_" + new_terms['_3'])
-new_terms['brm_key'] = (new_terms['Single Job Family'] + "_" + new_terms['_4'])
-new_terms['brm_key'] = new_terms['brm_key'].str.lower()
-new_terms = new_terms.drop(columns=['_1', '_2', '_3', '_4'])
-# read the amend the BRM file
-brm_map = pd.read_csv('C:\\Users\\DuEvans\\Documents\\ktp_data\\brm_map.csv', encoding='latin1')
-brm_map['brm_key'] = brm_map['LOCAL_ACTIVITY_ID']
-brm_map['brm_key'] = brm_map['brm_key'].str.lower()
-brm_map = brm_map[['brm_key', 'Activity', 'Process', 'Category']]
-
-# merge the two files w/ BRM categories
-new_terms = pd.merge(new_terms, brm_map, on='brm_key', how='left', sort=False)
-
-# remove nan values from the matched dataset
-mgr_nan = new_terms[new_terms['Structure'].isnull()]
-# remove the nan values from the original dataset
-mgr_mapped = new_terms[new_terms['Structure'].notnull()]
-# drop the nan columns
-mgr_nan = mgr_nan.drop(['Primary Key','Structure', 'Group', 'Team'], axis=1)
-# match the values to the EEID map
-eeid_mapped = pd.merge(mgr_nan, eeid_key, on='ID', how='left')
-# compile the new dataset
-new_terms = mgr_mapped.append(eeid_mapped, sort=False)
-new_terms = new_terms.rename(columns={'Primary Key': 'Manager'})
-
+new_terms = new_terms.rename(columns={'Cost Center': 'Cost Centers'})
+new_terms = brm_map(new_terms)
 ##################################################
 
 
 # todo: import age, ethnicity, gender into the list of new terminations
-# use creds to create a client to interact with the Google Drive API
-scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
-creds = ServiceAccountCredentials.from_json_keyfile_name('client_secret.json', scope)
-client = gspread.authorize(creds)
-
-# find each datasheet and clear the current values
-records_sheet = client.open("unedited records").worksheet('data')
-df_demo = pd.DataFrame(records_sheet.get_all_records())
-demographics = df_demo[['ID', 'Gender', 'Date of Birth (Locale Sensitive)', 'Race/Ethnicity (Locale Sensitive)']]
 
 df_demo = pd.read_csv(ref_file)
+demographics = df_demo[['ID', 'Gender', 'Date of Birth (Locale Sensitive)', 'Race/Ethnicity (Locale Sensitive)']]
 
 # merge demographic information to the new terms
 new_terms = pd.merge(new_terms, demographics, on=['ID'], how='left')
@@ -134,90 +95,17 @@ new_terms['yrs_tenure_at_term'] = (new_terms['days_tenure_at_term'] / 365).round
 
 
 # map management levels
-new_terms['Management Level1'] = new_terms['Management Level'].map({'11 Individual Contributor': 'Individual Contributor',
-                                                        '9 Manager': 'Manager', '8 Senior Manager': 'Manager',
-                                                        '10 Supervisor': 'Manager', '7 Director': 'Director',
-                                                        '6 Exec & Sr. Director/Dean': 'Executive Director',
-                                                        '5 VP': 'VP', '4 Senior VP': 'Above VP',
-                                                        '2 Senior Officer': 'Above VP',
-                                                        '3 Executive VP': 'Above VP'})
+new_terms = management_levels(new_terms)
 # map ethnicity
-new_terms['Ethnicity'] = new_terms['Race/Ethnicity (Locale Sensitive)'].map({'White (Not Hispanic or Latino) (United States of America)': 'White',
-                                    'Asian (Not Hispanic or Latino) (United States of America)': 'Asian',
-                                    'Black or African American (Not Hispanic or Latino) (United States of America)': 'Black',
-                                    'Hispanic or Latino (United States of America)': 'Hispanic',
-                                    'Two or More Races (Not Hispanic or Latino) (United States of America)': 'Two or more',
-                                    'White - Other (United Kingdom)': 'White',
-                                    'White - Other European (United Kingdom)': 'White',
-                                    'Asian (Indian) (India)': 'Asian',
-                                    'Black - African (United Kingdom)': 'Black',
-                                    'American Indian or Alaska Native (Not Hispanic or Latino) (United States of America)': 'American Indian',
-                                    'White - British (United Kingdom)': 'White',
-                                    'Native Hawaiian or Other Pacific Islander (Not Hispanic or Latino) (United States of America)': 'Pacific Islander'})
-dni_value = 'dni'
-new_terms['Ethnicity'] = new_terms['Ethnicity'].fillna(value=dni_value)
+new_terms = map_ethnicity(new_terms)
+
 # label everything as either 'Prepare' or 'New'
 #   this is just either 'Prepare,' or 'New'
-new_terms['Prepare/New A'] = new_terms['Group'].map({'Admissions Group': 'Prepare', 'Technology': 'Prepare',
-                                                       'NXT': 'Prepare', 'Licensure Group': 'Prepare',
-                                                       'Med': 'Prepare', 'Finance & Accounting': 'Prepare',
-                                                       'Admissions Faculty': 'Prepare', 'Nursing': 'Prepare',
-                                                       'MPrep': 'Prepare', 'Marketing': 'Prepare', 'Bar': 'Prepare',
-                                                       'HR / PR / Admin': 'Prepare', 'Publishing': 'Prepare',
-                                                       'Data and Learning Science': 'Prepare', 'Metis': 'New',
-                                                       'Digital Media': 'Prepare', 'iHuman': 'New',
-                                                       'Advise': 'New', 'International': 'Prepare',
-                                                       'Metis Faculty': 'New', 'Admissions Core': 'Prepare',
-                                                       'Admissions New': 'Prepare', 'Allied Health': 'Prepare',
-                                                       'Legal': 'Prepare', 'TTL Labs': 'New', 'Executive': 'Prepare',
-                                                       'Licensure Programs': 'Prepare'})
-# this is either 'Prepare,' or the specific new business group
-new_terms['Prepare/New B'] = new_terms['Group'].map({'Admissions Group': 'Prepare', 'Technology': 'Prepare',
-                                                       'NXT': 'Prepare', 'Licensure Group': 'Prepare',
-                                                       'Med': 'Prepare', 'Finance & Accounting': 'Prepare',
-                                                       'Admissions Faculty': 'Prepare', 'Nursing': 'Prepare',
-                                                       'MPrep': 'Prepare', 'Marketing': 'Prepare', 'Bar': 'Prepare',
-                                                       'HR / PR / Admin': 'Prepare', 'Publishing': 'Prepare',
-                                                       'Data and Learning Science': 'Prepare', 'Metis': 'Metis',
-                                                       'Digital Media': 'Prepare', 'iHuman': 'New',
-                                                       'Advise': 'Advise', 'International': 'Prepare',
-                                                       'Metis Faculty': 'Metis', 'Admissions Core': 'Prepare',
-                                                       'Admissions New': 'Prepare', 'Allied Health': 'Prepare',
-                                                       'Legal': 'Prepare', 'TTL Labs': 'DBC/TTL', 'Executive': 'Prepare',
-                                                       'Licensure Programs': 'Prepare'})
+new_terms = prepare_or_new(new_terms)
+
 # label everything into current digital/technology/marketing roles
-new_terms['Digital'] = new_terms['Team'].map({'Analytics and Digital Marketing': 'Marketing',
-                                                'Email Marketing': 'Marketing', 'Growth': 'Marketing',
-                                                'Market Research': 'Marketing', 'Marketing Leadership': 'Marketing',
-                                                'Cloud Operations': 'Technology', 'Data Engineering': 'Technology',
-                                                'Delivery Management': 'Technology', 'MPrep Technology': 'Technology',
-                                                'Platform': 'Technology', 'UX': 'Technology', 'Website': 'Technology',
-                                                'Data Science': 'Data Analytics', 'Learning Science': 'Analytics',
-                                                'Psychometrics': 'Data Analytics'})
+new_terms = digital_map(new_terms)
 
-
-new_terms['Digital B'] = new_terms['Team'].map({'Analytics and Digital Marketing': 'Digital',
-                                                'Email Marketing': 'Digital', 'Growth': 'Digital',
-                                                'Market Research': 'Digital', 'Marketing Leadership': 'Digital',
-                                                'Cloud Operations': 'Digital', 'Data Engineering': 'Digital',
-                                                'Delivery Management': 'Digital', 'MPrep Technology': 'Digital',
-                                                'Platform': 'Digital', 'UX': 'Digital', 'Website': 'Digital',
-                                                'Data Science': 'Digital', 'Learning Science': 'Digital',
-                                                'Psychometrics': 'Digital'})
-
-new_terms['Structure B'] = new_terms['Group'].map({'Admissions Group': 'Admissions', 'Technology': 'Common',
-                                                       'NXT': 'NXT', 'Licensure Group': 'Licensure',
-                                                       'Med': 'Licensure', 'Finance & Accounting': 'Common',
-                                                       'Admissions Faculty': 'Admissions', 'Nursing': 'Licensure',
-                                                       'MPrep': 'Admissions', 'Marketing': 'Common', 'Bar': 'Licensure',
-                                                       'HR / PR / Admin': 'Common', 'Publishing': 'Common',
-                                                       'Data and Learning Science': 'Common', 'Metis': 'New Ventures',
-                                                       'Digital Media': 'Common', 'iHuman': 'New Ventures',
-                                                       'Advise': 'Advise', 'International': 'Licensure',
-                                                       'Metis Faculty': 'New Ventures', 'Admissions Core': 'Admissions',
-                                                       'Admissions New': 'Admissions', 'Allied Health': 'Licensure',
-                                                       'Legal': 'Common', 'TTL Labs': 'New Ventures', 'Executive': 'Common',
-                                                       'Licensure Programs': 'Licensure'})
 
 # find the RIFs
 
@@ -239,7 +127,7 @@ all_terms = old_terms.append(new_terms, sort=False)
 
 all_terms.pop('Organization Assignments')
 
-all_terms.drop_duplicates()
+all_terms = all_terms.drop_duplicates()
 
 # map the termination category field into something usable
 all_terms['Term Type'] = all_terms['Termination Category'].map({'Terminate Employee > Voluntary': 'vol',
@@ -265,10 +153,40 @@ ft_terms.to_csv('historic_terms_ft.csv', index=False)
 
 # for sending to google sheets
 terms0 = pd.read_csv('C:\\Users\\DuEvans\\Documents\\ktp_data\\terminations\\historic_terms_ft.csv', encoding='latin1')
+terms0 = terms0.drop_duplicates(subset=['ID'])
 terms0['Termination Date'] = pd.to_datetime(terms0['Termination Date'])
 terms_prepare = terms0.loc[terms0['Prepare/New A'] == 'Prepare']
 
-# todo: create a separate frame of the rolling 12 month headcount metrics
+# map structure B and digital again because they started getting removed for some reason
+terms_prepare['Structure B'] = terms_prepare['Group'].map({'Admissions Group': 'Admissions', 'Technology': 'Common',
+                                                       'NXT': 'NXT', 'Licensure Group': 'Licensure',
+                                                       'Med': 'Licensure', 'Finance & Accounting': 'Common',
+                                                       'Admissions Faculty': 'Admissions', 'Nursing': 'Licensure',
+                                                       'MPrep': 'Admissions', 'Marketing': 'Common', 'Bar': 'Licensure',
+                                                       'HR / PR / Admin': 'Common', 'Publishing': 'Common',
+                                                       'Data and Learning Science': 'Common', 'Metis': 'New Ventures',
+                                                       'Digital Media': 'Common', 'iHuman': 'New Ventures',
+                                                       'Advise': 'Advise', 'International': 'Licensure',
+                                                       'Metis Faculty': 'New Ventures', 'Admissions Core': 'Admissions',
+                                                       'Admissions New': 'Admissions', 'Allied Health': 'Licensure',
+                                                       'Legal': 'Common', 'TTL Labs': 'New Ventures', 'Executive': 'Common',
+                                                       'Licensure Programs': 'Licensure'})
+
+terms_prepare = digital_map(terms_prepare)
+
+# set age at termination
+terms_prepare['dob'] = pd.to_datetime(terms_prepare['Date of Birth (Locale Sensitive)'])
+
+terms_prepare['days_old_at_term'] = (records_date - (terms_prepare['dob'])).dt.days
+
+terms_prepare['yrs_old_at_term'] = (terms_prepare['days_old_at_term'] / 365).round(0)
+
+# set tenure at termination
+terms_prepare['doh'] = pd.to_datetime(terms_prepare['Hire Date'])
+terms_prepare['days_tenure_at_term'] = (records_date - (terms_prepare['doh'])).dt.days
+terms_prepare['yrs_tenure_at_term'] = (terms_prepare['days_tenure_at_term'] / 365).round(2)
+
+# create a separate frame of the rolling 12 month headcount metrics
 
 records_date = pd.to_datetime(records_date)
 roll_12_date = records_date - timedelta(days=365)
@@ -279,16 +197,25 @@ terms_roll_12 = terms_prepare.loc[terms_prepare['Termination Date'] > roll_12_da
 terms1 = terms_prepare.loc[terms_prepare['Termination Date'] > '12/31/2016']
 terms2017 = terms1.loc[terms1['Termination Date'] < '01/01/2018']
 
-# todo: create a separate frame for 2018
+# create a separate frame for 2018
 terms2018 = terms_prepare.loc[terms_prepare['Termination Date'] > '12/31/2017']
 
 
-# todo: create a non-confidential termination dataset for all the same cuts
+# create a non-confidential termination dataset for all the same cuts
 noncf_columns = ['Gender', 'Race/Ethnicity (Locale Sensitive)', 'Date of Birth (Locale Sensitive)',
                  'Total Pay - Amount', 'dob', 'days_old_at_term', 'yrs_old_at_term',
                  'Ethnicity']
+
+# create datasets just for the HR team dashboard (no comp)
+hr_team_cols = ['Total Pay - Amount']
+hr_terms_2018 = terms2018.drop(columns=hr_team_cols)
+hr_terms_rolling = terms_roll_12.drop(columns=hr_team_cols)
+
+all_terms = pd.read_csv('C:\\Users\\DuEvans\\Documents\\ktp_data\\terminations\\historic_terms.csv', encoding='latin1')
+hr_team_all = all_terms.drop(columns=hr_team_cols)
+
 terms2017_noncf = terms2017.drop(columns=noncf_columns)
-terms2018_noncf =terms2018.drop(columns=noncf_columns)
+terms2018_noncf = terms2018.drop(columns=noncf_columns)
 terms_roll_12_noncf = terms_roll_12.drop(columns=noncf_columns)
 
 # send all cuts of terminations to a confidential spreadsheet
@@ -303,6 +230,19 @@ scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/au
 creds = ServiceAccountCredentials.from_json_keyfile_name('client_secret.json', scope)
 client = gspread.authorize(creds)
 
+# hr team dashboard
+hr_team_dashboard = client.open('terms_2018').sheet1
+hr_team_dashboard.clear()
+gspread_dataframe.set_with_dataframe(hr_team_dashboard, hr_terms_2018)
+
+hr_team_dashboard = client.open('terms_rolling').sheet1
+hr_team_dashboard.clear()
+gspread_dataframe.set_with_dataframe(hr_team_dashboard, hr_terms_rolling)
+
+hr_team_dashboard = client.open('all_terms').sheet1
+hr_team_dashboard.clear()
+gspread_dataframe.set_with_dataframe(hr_team_dashboard, hr_team_all)
+print('\nHR team dashboard updated.')
 
 # non_confidential dashbaord
 noncf_2017_sheet = client.open('Prepare Turnover Dashboard v1.0').worksheet('2017 Data')
@@ -320,8 +260,26 @@ print('\nER team dashboard updated.')
 
 
 
+# todo: D&I (confidential) dashboard
+cf_2017_sheet = client.open('D&I Progress v1.1').worksheet('2017 terms')
+cf_2017_sheet.clear()
+gspread_dataframe.set_with_dataframe(cf_2017_sheet, terms2017)
+
+cf_2018_sheet = client.open('D&I Progress v1.1').worksheet('2018 terms')
+cf_2018_sheet.clear()
+gspread_dataframe.set_with_dataframe(cf_2018_sheet, terms2018)
+
+cf_rolling_sheet = client.open('D&I Progress v1.1').worksheet('rolling terms')
+cf_rolling_sheet.clear()
+gspread_dataframe.set_with_dataframe(cf_rolling_sheet, terms_roll_12)
+print('\nD&I Dashboard updated.')
+
+
+
+
+
 # write each of the sheets with new data
-gspread_dataframe.set_with_dataframe(sheet, ft_terms)
+#gspread_dataframe.set_with_dataframe(sheet, ft_terms)
 
 # get today's date, again, but format it as mm/dd/yyyy, and include the time
 dt = datetime.now()
