@@ -139,7 +139,7 @@ pop_mapped['Ethnicity'] = pop_mapped['Race/Ethnicity (Locale Sensitive)'].map({'
                                     'American Indian or Alaska Native (Not Hispanic or Latino) (United States of America)': 'American Indian',
                                     'White - British (United Kingdom)': 'White',
                                     'Native Hawaiian or Other Pacific Islander (Not Hispanic or Latino) (United States of America)': 'Pacific Islander'})
-dni_value = 'dni'
+dni_value = 'Did not identify'
 pop_mapped['Ethnicity'] = pop_mapped['Ethnicity'].fillna(value=dni_value)
 print('Ethnicity mapped and organized.')
 
@@ -379,6 +379,11 @@ ktp_dashboard = client.open('Prepare Demographic Dashboard v1.3').worksheet('KTP
 ktp_dashboard.clear()
 gspread_dataframe.set_with_dataframe(ktp_dashboard, prepare_data_non_conf)
 print('\nKTP-wide dashboard updated.')
+
+hr_team_dashboard = client.open('prepare_today').sheet1
+hr_team_dashboard.clear()
+gspread_dataframe.set_with_dataframe(hr_team_dashboard, prepare_data_non_conf)
+print('\nHR team dashboard updated.')
 
 di_progress = client.open('D&I Progress v1.0').worksheet('Prepare Today')
 di_progress.clear()
