@@ -126,6 +126,12 @@ def digital_map(dataset):
                                                       'Platform': 'Digital', 'UX': 'Digital', 'Website': 'Digital',
                                                       'Data Science': 'Digital', 'Learning Science': 'Digital',
                                                       'Psychometrics': 'Digital', 'Technology Leadership': 'Digital'})
+
+    # fill null values with 'non-digital'
+    null_value = 'Non Digital'
+    dataset['Digital A'] = dataset['Digital A'].fillna(null_value)
+    dataset['Digital B'] = dataset['Digital B'].fillna(null_value)
+
     return dataset
 
 def brm_map(dataset):
@@ -140,7 +146,7 @@ def brm_map(dataset):
     dataset['_2'] = dataset['_1'].str[:2]
     dataset['_3'] = dataset['_1'].str[-4:]
     dataset['_4'] = (dataset['_2'] + "_" + dataset['_3'])
-    dataset['brm_key'] = (dataset['Single Job Family'] + "_" + df_2['_4'])
+    dataset['brm_key'] = (dataset['Single Job Family'] + "_" + dataset['_4'])
     dataset['brm_key'] = dataset['brm_key'].str.lower()
     dataset = dataset.drop(columns=['_1', '_2', '_3', '_4'])
 
@@ -176,7 +182,7 @@ def map_ethnicity(dataset):
          'American Indian or Alaska Native (Not Hispanic or Latino) (United States of America)': 'American Indian',
          'White - British (United Kingdom)': 'White',
          'Native Hawaiian or Other Pacific Islander (Not Hispanic or Latino) (United States of America)': 'Pacific Islander'})
-    dni_value = 'dni'
+    dni_value = 'Did not identify'
     dataset['Ethnicity'] = dataset['Ethnicity'].fillna(value=dni_value)
 
     return dataset
