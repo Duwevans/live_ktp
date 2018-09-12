@@ -16,13 +16,13 @@ def manager_map(dataset):
     # format the eid key to match the manager map
     eeid_key.columns = ['Name', 'ID', 'Structure', 'Group', 'Team']
 
-    df_0 = pd.merge(dataset, mgr_key, on='Manager ID', how='left', sort=False)
+    dataset = pd.merge(dataset, mgr_key, on='Manager ID', how='left', sort=False)
     # remove nan values from the matched dataset
 
-    mgr_nan = df_0[df_0['Structure'].isnull()]
+    mgr_nan = dataset[dataset['Structure'].isnull()]
 
     # remove the nan values from the original dataset
-    mgr_mapped = df_0[df_0['Structure'].notnull()]
+    mgr_mapped = dataset[dataset['Structure'].notnull()]
 
     # drop the nan columns
     mgr_nan = mgr_nan.drop(['Primary Key', 'Structure', 'Group', 'Team'], axis=1)
@@ -33,10 +33,10 @@ def manager_map(dataset):
     # compile the new dataset
     pop_mapped = mgr_mapped.append(eeid_mapped, sort=False)
 
-    pop_mapped = pop_mapped.rename(columns={'Primary Key': 'Manager'})
+    dataset = pop_mapped.rename(columns={'Primary Key': 'Manager'})
 
     # map to Structure B values
-    pop_mapped['Structure B'] = pop_mapped['Group'].map({'Admissions Group': 'Admissions', 'Technology': 'Common',
+    dataset['Structure B'] = dataset['Group'].map({'Admissions Group': 'Admissions', 'Technology': 'Common',
                                                          'NXT': 'NXT', 'Licensure Group': 'Licensure',
                                                          'Med': 'Licensure', 'Finance & Accounting': 'Common',
                                                          'Admissions Faculty': 'Admissions', 'Nursing': 'Licensure',
@@ -52,9 +52,11 @@ def manager_map(dataset):
                                                          'Legal': 'Common', 'TTL Labs': 'New Ventures',
                                                          'Executive': 'Common',
                                                          'Licensure Programs': 'Licensure'})
+    # adjust JP
+    dataset.loc[dataset['ID'] == 'P000025952', 'Structure'] = 'Common'
+    dataset.loc[dataset['ID'] == 'P000025952', 'Team'] = 'CEO'
 
-    dataset = pop_mapped
-    print(list(dataset))
+
     return dataset
 
 def prepare_or_new(dataset):
@@ -93,7 +95,6 @@ def prepare_or_new(dataset):
                                                            'Legal': 'Prepare', 'DBC/TTL': 'DBC/TTL',
                                                            'Executive': 'Prepare',
                                                            'Licensure Programs': 'Prepare'})
-    print(list(dataset))
     return dataset
 
 
@@ -185,6 +186,8 @@ def map_ethnicity(dataset):
     dni_value = 'Did not identify'
     dataset['Ethnicity'] = dataset['Ethnicity'].fillna(value=dni_value)
 
+    dataset.loc[dataset['ID'] == 'P000025952', 'Gender'] = 'Male'
+
     return dataset
 
 def age_brackets(dataset):
@@ -220,7 +223,110 @@ def management_levels(dataset):
     dataset.loc[dataset['ID'] == 'P000238419', 'Management Level A'] = 'VP'
     dataset.loc[dataset['ID'] == 'P000018502', 'Management Level A'] = 'VP'
     dataset.loc[dataset['ID'] == 'P000055603', 'Management Level A'] = 'VP'
-    dataset.loc[dataset['ID'] == 'P000025952', 'Gender'] = 'Male'
+
+    dataset['di_leader'] = dataset['Management Level A'].map({'Individual Contributor': 'n_leader',
+                                                    'Manager': 'leader', 'Director': 'leader',
+                                                    'Executive Director': 'sr_leader', 'VP': 'sr_leader',
+                                                    'Above VP': 'sr_leader'})
+
+    try:
+        dataset['di_poc'] = dataset['Ethnicity'].map({'White': 'n_poc', 'Black': 'poc', 'Hispanic': 'poc',
+                                                        'Asian': 'poc', 'Two or more': 'poc', 'American Indian': 'poc',
+                                                        'Pacific Islander': 'poc'})
+
+    except KeyError as e:
+        print('\nError on: ' + e)
+        print('\nAdd ethnicity labels before management levels.')
+    return dataset
+
+def hierarchy_id_match(dataset):
+    """
+    Takes a population dataset and maps the employee ID across the management hierarchy fields.
+    Saves the updated file to records.
+    :param dataset:
+    :param filename:
+    :return:
+    """
+    #pop = pd.read_csv('C:\\Users\\DuEvans\\Documents\\ktp_data\\population\\ft_ktp\\ktp_pop_08_13_2018.csv')
+    # extract the entire pattern
+
+    dataset['hierarchy_lvl_1'] = dataset['supervisory org - lvl 1'].str.split('(').str.get(1)
+    # strip the ')' on the right
+
+    dataset['hierarchy_lvl_1'] = dataset['hierarchy_lvl_1'].str[:-1]
+
+    dataset['hierarchy_lvl_2'] = dataset['supervisory org - lvl 2'].str.split('(').str.get(1)
+    dataset['hierarchy_lvl_2'] = dataset['hierarchy_lvl_2'].str[:-1]
+
+    dataset['hierarchy_lvl_3'] = dataset['supervisory org - lvl 3'].str.split('(').str.get(1)
+    dataset['hierarchy_lvl_3'] = dataset['hierarchy_lvl_3'].str[:-1]
+
+    # match employee IDs to the name of the manager hierarchy
+    eids = dataset[['ID', 'Preferred Name in General Display Format']]
+    eids = eids.rename(columns={'Preferred Name in General Display Format': 'name'})
+    # manager hierarchy 1
+    hier_1_eids = dataset[['hierarchy_lvl_1']]
+    hier_1_eids = hier_1_eids.rename(columns={'hierarchy_lvl_1': 'name'})
+    # this matches each hierarchy name with their own employee id
+    hier_1_eids = pd.merge(hier_1_eids, eids, on='name', how='left')
+    # format to match the merge back into the full population
+    hier_1_eids = hier_1_eids.rename(columns={'name': 'hierarchy_lvl_1', 'ID': 'hierarchy_lvl_1_id'})
+    # drop duplicate entries
+    hier_1_eids = hier_1_eids.drop_duplicates(subset='hierarchy_lvl_1')
+
+
+    # manager hierarchy 2
+    hier_2_eids = dataset[['hierarchy_lvl_2']]
+    hier_2_eids = hier_2_eids.rename(columns={'hierarchy_lvl_2': 'name'})
+    hier_2_eids = pd.merge(hier_2_eids, eids, on='name', how='left')
+    hier_2_eids = hier_2_eids.rename(columns={'name': 'hierarchy_lvl_2', 'ID': 'hierarchy_lvl_2_id'})
+    hier_2_eids = hier_2_eids.drop_duplicates(subset='hierarchy_lvl_2')
+
+    # manager hierarchy 3
+    hier_3_eids = dataset[['hierarchy_lvl_3']]
+    hier_3_eids = hier_3_eids.rename(columns={'hierarchy_lvl_3': 'name'})
+    hier_3_eids = pd.merge(hier_3_eids, eids, on='name', how='left')
+    hier_3_eids = hier_3_eids.rename(columns={'name': 'hierarchy_lvl_3', 'ID': 'hierarchy_lvl_3_id'})
+    hier_3_eids = hier_3_eids.drop_duplicates(subset='hierarchy_lvl_3')
+
+    # merge hierarchies 1, 2, and 3 back into the full population
+    dataset = pd.merge(dataset, hier_1_eids, on='hierarchy_lvl_1', how='left')
+    dataset = pd.merge(dataset, hier_2_eids, on='hierarchy_lvl_2', how='left')
+    dataset = pd.merge(dataset, hier_3_eids, on='hierarchy_lvl_3', how='left')
 
     return dataset
 
+def map_tenure_fields(dataset, records_date):
+    """
+    adds days & years tenure, and adds tenure brackets to the data set.
+    :param dataset:
+    :return:
+    """
+
+    dataset['days_tenure'] = (records_date - (dataset['(Most Recent) Hire Date'])).dt.days
+    dataset['yrs_tenure'] = (dataset['days_tenure'] / 365).round(0)
+    dataset['months_tenure'] = (dataset['yrs_tenure'] / 12).round(0)
+
+    yrs_ten_bins = [-1, 2, 4, 6, 8, 10, 100]
+    yrs_bin_names = ['0 to 2', '2 to 4', '4 to 6', '6 to 8', '8 to 10', '10+']
+    dataset['yrs_tenure_group'] = pd.cut(dataset['yrs_tenure'], yrs_ten_bins, labels=yrs_bin_names)
+
+    return dataset
+
+def map_age_fields(dataset, records_date):
+    """
+    adds days & years of age, and adds age brackets to the data set.
+    :param dataset:
+    :return:
+    """
+
+    dataset['days_old'] = (records_date - (dataset['Date of Birth (Locale Sensitive)'])).dt.days
+
+    dataset['Age'] = (dataset['days_old'] / 365).round(0)
+
+    # bin age into age ranges
+    age_bin_names = ['18 to 24', '25 to 34', '35 to 44', '45 to 54', '55 to 64', '65+']
+    age_bins = [18, 24, 34, 44, 54, 64, 100]
+    dataset['Age Bracket'] = pd.cut(dataset['Age'], age_bins, labels=age_bin_names)
+
+    return dataset
