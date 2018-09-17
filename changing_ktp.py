@@ -10,10 +10,6 @@ from oauth2client.service_account import ServiceAccountCredentials
 from sys import exit
 from data_tagging import *
 
-# todo:
-# somewhere in here, change_date indexes are split between datetimes and non-datetimes.
-# need to also be able to check for duplicate entries prior to saving anywhere.
-
 
 pd.options.mode.chained_assignment = None  # default='warn'
 
@@ -186,7 +182,6 @@ print('\nUnique individuals with changes: ' + str(len(df_changes)))
 date = pd.to_datetime(date_a)
 df_changes['change_date'] = date
 
-#df_changes = df_changes.set_index('change_date')
 
 # save the new changes to a csv file
 os.chdir('C:\\Users\\DuEvans\\Documents\\ktp_data\\population\\changes\\daily_movement\\')
@@ -196,13 +191,10 @@ df_changes.to_csv(filename, index=False)
 
 # get the previous file,
 #  and save an archived version of the previous file
-#os.chdir('C:\\Users\\DuEvans\\Documents\\ktp_data\\population\\changes\\archive')
+
 old_changes = pd.read_csv('C:\\Users\\DuEvans\\Documents\\ktp_data\\population\\changes\\ktp_population_movement_all_records.csv')
 old_changes['change_date'] = pd.to_datetime(old_changes['change_date'])
-#records_name = 'ktp_population_changes_' + file_date_b + '.csv'
-#old_changes = old_changes.drop_duplicates()
-#old_changes.to_csv(records_name, index=False)
-#print('\nRecords archived.')
+
 
 # append the existing change dataframe with new data
 os.chdir('C:\\Users\\DuEvans\\Documents\\ktp_data\\population\\changes\\')
@@ -215,20 +207,13 @@ updated_df['(Most Recent) Hire Date_b'] = pd.to_datetime(updated_df['(Most Recen
 updated_df = updated_df.drop_duplicates()
 updated_df.to_csv('ktp_population_movement_all_records.csv', index=False)
 
-#df = pd.read_csv('C:\\Users\\DuEvans\\Documents\\ktp_data\\population\\changes\\ktp_population_movement_all_records.csv')
-#df['(Most Recent) Hire Date_a'] = pd.to_datetime(df['(Most Recent) Hire Date_a'])
-#df['(Most Recent) Hire Date_b'] = pd.to_datetime(df['(Most Recent) Hire Date_b'])
-#len(df)
-#df = df.drop_duplicates()
-#len(df)
-#df.duplicated()
-#dfa = df.loc[df['First Name_a'] == 'Aaron']
+
 # update the full set to a google sheets backend
 update_sheets = input('\nUpdate population changes google spreadsheets? (y/n) ')
 if update_sheets == 'y':
 
     sheets_data = updated_df
-    #sheets_data['date_index'] = sheets_data['date_a']
+
 
     print('\nHear me, oh Great Google overseers...')
 
