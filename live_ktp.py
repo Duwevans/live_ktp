@@ -86,8 +86,12 @@ def find_unmatched(dataset):
             print(name)
         for id in na_remaining['ID'].unique():
             print(id)
-        print('\nExiting...')
-        exit()
+        continue_input = input('\nContinue to save data without all matches present? (y/n) ')
+        if continue_input == 'y':
+            save_record(dataset)
+        elif continue_input == 'n':
+            print('\nExiting...')
+            exit()
 
 find_unmatched(df2)
 
@@ -157,6 +161,9 @@ elif update_sheets == 'n':
         print('\nProcess finished.')
         exit()
 
+google_time_1 = time.time()
+
+
 print('\nHear me, oh Great Google overseers...')
 
 
@@ -221,6 +228,12 @@ dt_pretty = dt.strftime("%m/%d/%y %I:%M%p")
 last_update = 'Data updated at: ' + dt_pretty + '.'
 print('\n')
 print(last_update)
+
+lap_time_1 = time.time() - google_time_1
+
+print('\nTime to update google spreadsheets: ' + time.strftime("%H:%M:%S", time.gmtime(lap_time_1)))
+
+
 # send the string to the google sheet
 last_updated_sheet = client.open("demographic visuals data").worksheet('last_updated')
 last_updated_sheet.update_cell(1,1,last_update)
@@ -236,3 +249,4 @@ if update_changes_1 == 'y':
 elif update_changes_1 == 'n':
     print('\nProcess finished.')
 
+print('\nProcess finished.')
