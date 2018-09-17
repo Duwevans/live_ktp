@@ -3,100 +3,35 @@ import numpy as np
 from datetime import datetime
 from datetime import date
 import os
+import gspread
+import gspread_dataframe
+from gspread_dataframe import set_with_dataframe
+from oauth2client.service_account import ServiceAccountCredentials
+from sys import exit
+from data_tagging import *
+
+# todo:
+# somewhere in here, change_date indexes are split between datetimes and non-datetimes.
+# need to also be able to check for duplicate entries prior to saving anywhere.
+
 
 pd.options.mode.chained_assignment = None  # default='warn'
 
-file_date_a = input('\nWhat is the most recent target date? (mm_dd_yyyy) ')
-file_date_b = input('\nWhat is the previous target date? (mm_dd_yyyy) ')
+file_date_a = input('\nDate today? (mm_dd_yyyy) ')
+file_date_b = input('\nDate yesterday? (mm_dd_yyyy) ')
 
-file_a = 'C:\\Users\\DuEvans\\Documents\\ktp_data\\population\\raw_records\\ktp_raw_pop_' + file_date_a + '.csv'
-file_b = 'C:\\Users\\DuEvans\\Documents\\ktp_data\\population\\raw_records\\ktp_raw_pop_' + file_date_b + '.csv'
+file_a = 'C:\\Users\\DuEvans\\Documents\\ktp_data\\population\\all_ktp\\ktp_all_pop_' + file_date_a + '.csv'
+file_b = 'C:\\Users\\DuEvans\\Documents\\ktp_data\\population\\all_ktp\\ktp_all_pop_' + file_date_b + '.csv'
 
 
 pop_1 = pd.read_csv(file_a, encoding='latin1')
 pop_0 = pd.read_csv(file_b, encoding='latin1')
 
-datasets = [pop_1, pop_0]
-
-
-# todo: find the current file
-#date1 = file_a[-14:]
-#date2 = date1[:-4]
 date_a = datetime.strptime(file_date_a, '%m_%d_%Y')
 
-# todo: find the previous file
-#date1 = file_b[-14:]
-#date2 = date1[:-4]
 date_b = datetime.strptime(file_date_b, '%m_%d_%Y')
 
-
-# import the manager key
-
-mgr_key = pd.read_csv('C:\\Users\\DuEvans\\Documents\\ktp_data\\mgr_key\\meid_key.csv')
-
-# read the eid key
-eeid_key = pd.read_csv('C:\\Users\\DuEvans\\Documents\\ktp_data\\mgr_key\\eid_key.csv')
-
-# format the eid key to match the manager map
-
-eeid_key.columns = ['Name', 'ID', 'Structure', 'Group', 'Team']
-
-# read the brm key
-brm_map = pd.read_csv('C:\\Users\\DuEvans\\Documents\\ktp_data\\brm_map.csv', encoding='latin1')
-brm_map['brm_key'] = brm_map['LOCAL_ACTIVITY_ID']
-brm_map['brm_key'] = brm_map['brm_key'].str.lower()
-brm_map = brm_map[['brm_key', 'Activity', 'Process', 'Category']]
-
-def format_dataframes(datasets):
-
-    for df in datasets:
-
-        # add in the manager key
-        df = pd.merge(df, mgr_key, on='Manager ID', how='left', sort=False)
-        # remove nan values from the matched dataset
-
-        mgr_nan = df[df['Structure'].isnull()]
-
-        # remove the nan values from the original dataset
-        mgr_mapped = df[df['Structure'].notnull()]
-
-        # drop the nan columns
-        mgr_nan = mgr_nan.drop(['Primary Key','Structure', 'Group', 'Team'], axis=1)
-
-        # match the values to the EEID map
-        eeid_mapped = pd.merge(mgr_nan, eeid_key, on='ID', how='left', sort=False)
-
-        # compile the new dataset
-        df = mgr_mapped.append(eeid_mapped, sort=False)
-
-        df = df.rename(columns={'Primary Key': 'Manager'})
-
-
-
-        # todo: import the brm key
-        # create the needed field to map to BRM
-
-        df['_1'] = df['Cost Centers'].str[:6]
-        df['_2'] = df['_1'].str[:2]
-        df['_3'] = df['_1'].str[-4:]
-        df['_4'] = (df['_2'] + "_" + df['_3'])
-        df['brm_key'] = (df['Single Job Family'] + "_" + df['_4'])
-        df['brm_key'] = df['brm_key'].str.lower()
-        df = df.drop(columns=['_1', '_2', '_3', '_4'])
-
-        # read the amend the BRM file
-
-
-
-        # merge the two files w/ BRM categories
-
-        df = pd.merge(df, brm_map, on='brm_key', how='left', sort=False)
-
-        # reset the index on ID
-        #df = df.set_index('ID')
-
-
-# format management levels
+# create numbers for management levels
 pop_1['mgt_lvl'] = pop_1['Management Level'].map({'11 Individual Contributor': 0,
                                                           '10 Supervisor': 1,
                                                           '9 Manager ': 1,
@@ -118,58 +53,6 @@ pop_0['mgt_lvl'] = pop_0['Management Level'].map({'11 Individual Contributor': 0
                                                           '4 Senior VP': 5,
                                                           '3 Executive VP': 6,
                                                           '2 Senior Officer': 7})
-
-
-# set date of birth column
-pop_1['dob'] = pd.to_datetime(pop_1['Date of Birth (Locale Sensitive)'])
-
-pop_0['dob'] = pd.to_datetime(pop_0['Date of Birth (Locale Sensitive)'])
-
-# set most recent hire date column
-pop_1['doh'] = pd.to_datetime(pop_1['(Most Recent) Hire Date'])
-
-pop_0['doh'] = pd.to_datetime(pop_0['(Most Recent) Hire Date'])
-
-
-# map ethnicities
-dni_value = 'dni'
-
-pop_1['Ethnicity'] = pop_1['Race/Ethnicity (Locale Sensitive)'].map(
-            {'White (Not Hispanic or Latino) (United States of America)': 'White',
-             'Asian (Not Hispanic or Latino) (United States of America)': 'Asian',
-             'Black or African American (Not Hispanic or Latino) (United States of America)': 'Black',
-             'Hispanic or Latino (United States of America)': 'Hispanic',
-             'Two or More Races (Not Hispanic or Latino) (United States of America)': 'Two or more',
-             'White - Other (United Kingdom)': 'White',
-             'White - Other European (United Kingdom)': 'White',
-             'Asian (Indian) (India)': 'Asian',
-             'Black - African (United Kingdom)': 'Black',
-             'American Indian or Alaska Native (Not Hispanic or Latino) (United States of America)': 'American Indian',
-             'White - British (United Kingdom)': 'White',
-             'Native Hawaiian or Other Pacific Islander (Not Hispanic or Latino) (United States of America)': 'Pacific Islander'})
-pop_1['Ethnicity'] = pop_1['Ethnicity'].fillna(value=dni_value)
-
-pop_0['Ethnicity'] = pop_0['Race/Ethnicity (Locale Sensitive)'].map(
-            {'White (Not Hispanic or Latino) (United States of America)': 'White',
-             'Asian (Not Hispanic or Latino) (United States of America)': 'Asian',
-             'Black or African American (Not Hispanic or Latino) (United States of America)': 'Black',
-             'Hispanic or Latino (United States of America)': 'Hispanic',
-             'Two or More Races (Not Hispanic or Latino) (United States of America)': 'Two or more',
-             'White - Other (United Kingdom)': 'White',
-             'White - Other European (United Kingdom)': 'White',
-             'Asian (Indian) (India)': 'Asian',
-             'Black - African (United Kingdom)': 'Black',
-             'American Indian or Alaska Native (Not Hispanic or Latino) (United States of America)': 'American Indian',
-             'White - British (United Kingdom)': 'White',
-             'Native Hawaiian or Other Pacific Islander (Not Hispanic or Latino) (United States of America)': 'Pacific Islander'})
-pop_0['Ethnicity'] = pop_0['Ethnicity'].fillna(value=dni_value)
-
-format_dataframes(datasets)
-
-# label the column names as new or previous
-
-
-# add columns from both data frames on EID as index
 
 # 'a' = after # 'b' = before
 
@@ -206,21 +89,16 @@ pop_all = pop_all.rename(columns={'Total Base Pay Annualized - Amount_a': 'base_
                         'Scheduled Weekly Hours_a': 'hours_a',
                         'Scheduled Weekly Hours_b': 'hours_b'})
 
-# calculate age
-pop_all['days_old_a'] = (date_a - (pop_all['dob_a'])).dt.days
-
-pop_all['age_a'] = (pop_all['days_old_a']/365).round(0)
-
-pop_all['days_old_b'] = (date_b - (pop_all['dob_b'])).dt.days
-
-pop_all['age_b'] = (pop_all['days_old_b']/365).round(0)
 
 # calculate tenure
-pop_all['days_tenure_a'] = (date_a - (pop_all['doh_a'])).dt.days
+pop_all['(Most Recent) Hire Date_a'] = pd.to_datetime(pop_all['(Most Recent) Hire Date_a'])
+pop_all['(Most Recent) Hire Date_b'] = pd.to_datetime(pop_all['(Most Recent) Hire Date_b'])
+
+pop_all['days_tenure_a'] = (date_a - (pop_all['(Most Recent) Hire Date_a'])).dt.days
 pop_all['yrs_tenure_a'] = (pop_all['days_tenure_a']/365).round(0)
 pop_all['months_tenure_a'] = (pop_all['yrs_tenure_a']/12).round(0)
 
-pop_all['days_tenure_b'] = (date_b - (pop_all['doh_b'])).dt.days
+pop_all['days_tenure_b'] = (date_b - (pop_all['(Most Recent) Hire Date_b'])).dt.days
 pop_all['yrs_tenure_b'] = (pop_all['days_tenure_b']/365).round(0)
 pop_all['months_tenure_b'] = (pop_all['yrs_tenure_b']/12).round(0)
 
@@ -243,12 +121,6 @@ pop_all = pop_all.sort_values(by=['base_chg'], ascending=False)
 # note - no manager ID B means this was a hire
 # note - no manager ID A means this was a term
 
-# find those that were termed
-#hired = pop_all.loc[pop_all['Manager ID_b'].isnull()]
-
-# find those that were hired
-#termed = pop_all.loc[pop_all['Manager ID_a'].isnull()]
-
 # create custom hire/term columns
 pop_all['hire'] = np.where(pop_all['Manager ID_b'].isnull(), 1, 0)
 
@@ -263,6 +135,7 @@ for column in columns:
 # save all records
 os.chdir('C:\\Users\\DuEvans\\Documents\\ktp_data\\population\\changes\\all_records\\')
 filename = ('ktp_pop_changes_' + file_date_a + '.csv')
+pop_all = pop_all.drop_duplicates()
 pop_all.to_csv(filename, index=False)
 print('\nFull population with all changes saved.')
 
@@ -310,22 +183,70 @@ df_changes = df_changes[~df_changes.index.duplicated(keep='first')]
 print('\nUnique individuals with changes: ' + str(len(df_changes)))
 
 # index the change dataframe by date
+date = pd.to_datetime(date_a)
+df_changes['change_date'] = date
 
-df_changes['date'] = date_a
-df_changes = df_changes.set_index('date')
+#df_changes = df_changes.set_index('change_date')
+
+# save the new changes to a csv file
+os.chdir('C:\\Users\\DuEvans\\Documents\\ktp_data\\population\\changes\\daily_movement\\')
+filename = 'ktp_population_changes_as_of_' + file_date_a + '.csv'
+df_changes.to_csv(filename, index=False)
 
 
 # get the previous file,
 #  and save an archived version of the previous file
-os.chdir('C:\\Users\\DuEvans\\Documents\\ktp_data\\population\\changes\\archive')
-old_changes = pd.read_csv('C:\\Users\\DuEvans\\Documents\\ktp_data\\population\\changes\\ktp_population_changes.csv')
-records_name = 'ktp_population_changes_' + file_date_b + '.csv'
-old_changes.to_csv(records_name)
-print('\nRecords archived.')
+#os.chdir('C:\\Users\\DuEvans\\Documents\\ktp_data\\population\\changes\\archive')
+old_changes = pd.read_csv('C:\\Users\\DuEvans\\Documents\\ktp_data\\population\\changes\\ktp_population_movement_all_records.csv')
+old_changes['change_date'] = pd.to_datetime(old_changes['change_date'])
+#records_name = 'ktp_population_changes_' + file_date_b + '.csv'
+#old_changes = old_changes.drop_duplicates()
+#old_changes.to_csv(records_name, index=False)
+#print('\nRecords archived.')
 
 # append the existing change dataframe with new data
 os.chdir('C:\\Users\\DuEvans\\Documents\\ktp_data\\population\\changes\\')
 updated_df = old_changes.append(df_changes, sort=False)
-updated_df.to_csv('ktp_population_changes.csv', index=False)
+
+# these fields have to be converted back to datetime to ensure duplicate check passes
+updated_df['(Most Recent) Hire Date_a'] = pd.to_datetime(updated_df['(Most Recent) Hire Date_a'])
+updated_df['(Most Recent) Hire Date_b'] = pd.to_datetime(updated_df['(Most Recent) Hire Date_b'])
+
+updated_df = updated_df.drop_duplicates()
+updated_df.to_csv('ktp_population_movement_all_records.csv', index=False)
+
+#df = pd.read_csv('C:\\Users\\DuEvans\\Documents\\ktp_data\\population\\changes\\ktp_population_movement_all_records.csv')
+#df['(Most Recent) Hire Date_a'] = pd.to_datetime(df['(Most Recent) Hire Date_a'])
+#df['(Most Recent) Hire Date_b'] = pd.to_datetime(df['(Most Recent) Hire Date_b'])
+#len(df)
+#df = df.drop_duplicates()
+#len(df)
+#df.duplicated()
+#dfa = df.loc[df['First Name_a'] == 'Aaron']
+# update the full set to a google sheets backend
+update_sheets = input('\nUpdate population changes google spreadsheets? (y/n) ')
+if update_sheets == 'y':
+
+    sheets_data = updated_df
+    #sheets_data['date_index'] = sheets_data['date_a']
+
+    print('\nHear me, oh Great Google overseers...')
+
+    os.chdir('C:\\Users\\DuEvans\\Documents\\ktp_data\\')
+    scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
+    creds = ServiceAccountCredentials.from_json_keyfile_name('client_secret.json', scope)
+    client = gspread.authorize(creds)
+
+    # find the dashboard data sheet and clear the current values
+    data_sheet = client.open("changing_ktp").sheet1
+    data_sheet.clear()
+
+    # write each of the sheets with new data
+    gspread_dataframe.set_with_dataframe(data_sheet, sheets_data)
+
+    print('\nGoogle sheets dashboard updated.')
+elif update_sheets == 'n':
+    pass
+
 
 print('\nProcess finished.')
