@@ -11,9 +11,11 @@ from sys import exit
 from oauth2client.service_account import ServiceAccountCredentials
 from data_tagging import *
 from update_historic_population_records import *
+from di_indices import calc_diversity_indices
 
 pd.options.mode.chained_assignment = None  # default='warn'
 
+total_time = time.time()
 
 os.chdir('C:\\Users\\DuEvans\\Documents\\ktp_data')
 
@@ -45,6 +47,7 @@ df1 = brm_map(df1)
 df1 = hierarchy_id_match(df1)
 df1['record_date'] = records_date
 df1['record_date'] = pd.to_datetime(df1['record_date'])
+df1 = df1.drop_duplicates(subset=['ID'], keep='last')
 
 os.chdir('C:\\Users\\DuEvans\\Documents\\ktp_data\\population\\all_ktp')
 file_name = 'ktp_all_pop_' + target_date + '.csv'
@@ -86,8 +89,12 @@ def find_unmatched(dataset):
             print(name)
         for id in na_remaining['ID'].unique():
             print(id)
-        print('\nExiting...')
-        exit()
+        continue_input = input('\nContinue to save data without all matches present? (y/n) ')
+        if continue_input == 'y':
+            save_record(dataset)
+        elif continue_input == 'n':
+            print('\nExiting...')
+            exit()
 
 find_unmatched(df2)
 
@@ -99,6 +106,7 @@ if update_records == 'y':
 elif update_records == 'n':
     pass
 
+conf_population = df1
 
 # send the data to a google spread sheet
 
@@ -148,91 +156,131 @@ digital_hc = pd.DataFrame(digital_hc.to_records())
 # important to allow for 'n' input as I might be fixing past records
 update_sheets = input('\nUpdate current population google spreadsheets? (y/n) ')
 if update_sheets == 'y':
-    pass
+    google_time_1 = time.time()
+
+    print('\nHear me, oh Great Google overseers...')
+
+    # use creds to create a client to interact with the Google Drive API
+    os.chdir('C:\\Users\\DuEvans\\Documents\\ktp_data')
+
+    scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
+    creds = ServiceAccountCredentials.from_json_keyfile_name('client_secret.json', scope)
+    client = gspread.authorize(creds)
+
+    # find each datasheet, clear the current values, write new data
+
+    ktp_dashboard = client.open('Prepare Demographic Dashboard v1.3').worksheet('KTP Data')
+    ktp_dashboard.clear()
+    gspread_dataframe.set_with_dataframe(ktp_dashboard, prepare_data_non_conf)
+    print('\nKTP-wide dashboard updated.')
+
+    hr_team_dashboard = client.open('prepare_today').sheet1
+    hr_team_dashboard.clear()
+    gspread_dataframe.set_with_dataframe(hr_team_dashboard, prepare_data_non_conf)
+    print('\nHR team dashboard updated.')
+
+    di_progress = client.open('D&I Progress v1.0').worksheet('Prepare Today')
+    di_progress.clear()
+    gspread_dataframe.set_with_dataframe(di_progress, prepare_data_non_conf)
+
+    di_progress_draft = client.open('D&I Progress v1.1').worksheet('Prepare Today')
+    di_progress_draft.clear()
+    gspread_dataframe.set_with_dataframe(di_progress_draft, prepare_data_non_conf)
+    print('\nD&I Progress Dashboard updated.')
+
+    # update terminations dashboard with pivoted 'Structure B' data
+    turnover_sheet = client.open('Prepare Turnover Dashboard v1.0').worksheet('Today Headcount')
+    turnover_sheet.clear()
+    gspread_dataframe.set_with_dataframe(turnover_sheet, turnover_hc)
+
+    digital_sheet = client.open('Prepare Turnover Dashboard v1.0').worksheet('Digital Headcount')
+    digital_sheet.clear()
+    gspread_dataframe.set_with_dataframe(digital_sheet, digital_hc)
+    print('\nTurnover dashboard updated.')
+
+    from updated_admissions_faculty import update_admissions_dashboard
+
+    update_admissions_dashboard(target_date, records_date)
+
+    # update data for the compensation dashboard
+    # send confidential population to the compensation dashboard
+    print('\nUpdating data for compensation dashboard...')
+    comp_dashboard = client.open('all_ktp_population_confidential').sheet1
+    comp_dashboard.clear()
+    gspread_dataframe.set_with_dataframe(comp_dashboard, conf_population)
+
+    # get new information from the bonus forecast
+    bonuses = client.open('KIP 2018 Forecast').worksheet('2018 participants for editing')
+    bonuses = bonuses.get_all_records()
+    bonuses = pd.DataFrame.from_records(bonuses)
+
+    bonuses = bonuses[['EEID', '(Pro-Rated) KIP Target', '(Pro-Rated) Total Comp Target',
+                       'est. 2018 bonus payout', 'est. 2018 bonus payout %',
+                       'est. 2018 total comp', 'est. 2018 comp payout %']]
+
+    bonuses = bonuses.rename(columns={'EEID': 'ID'})
+    df3 = pd.merge(df1, bonuses, on='ID', how='left')
+
+    # calculate total expected 2018 base comp + bonus
+    df3['Total Base Pay Annualized - Amount'] = pd.to_numeric(df3['Total Base Pay Annualized - Amount'])
+    df3['est. 2018 bonus payout'] = pd.to_numeric(df3['est. 2018 bonus payout'])
+    df3['est. 2018 bonus payout'] = df3['est. 2018 bonus payout'].fillna(0)
+    df3['est. 2018 total comp'] = (df3['Total Base Pay Annualized - Amount'] + df3['est. 2018 bonus payout'])
+
+    # send bonus information to the dashboard spreadsheet
+    bonus_dashboard = client.open('2018_population_with_forecasted_bonus_payouts').sheet1
+    bonus_dashboard.clear()
+    gspread_dataframe.set_with_dataframe(bonus_dashboard, df3)
+    print('\nCompensation dashboard updated.')
+
+    # update the manager map google sheet with new information
+    map_sheet = client.open('The Map v2').worksheet('population')
+    map_sheet.clear()
+    gspread_dataframe.set_with_dataframe(map_sheet, ktp_data_non_conf)
+
+    map_draft = client.open('The Map v3').worksheet('population')
+    map_draft.clear()
+    gspread_dataframe.set_with_dataframe(map_draft, ktp_data_non_conf)
+    print('\nManager map updated with current population.')
+
+    # get today's date, again, but format it as mm/dd/yyyy, and include the time
+    dt = datetime.now()
+    dt_pretty = dt.strftime("%m/%d/%y %I:%M%p")
+
+    # format into a string
+    last_update = 'Data updated at: ' + dt_pretty + '.'
+    print('\n')
+    print(last_update)
+
+    lap_time_1 = time.time() - google_time_1
+
+    print('\nTime to update google spreadsheets: ' + time.strftime("%H:%M:%S", time.gmtime(lap_time_1)))
+
+    # send the string to the google sheet
+    last_updated_sheet = client.open("demographic visuals data").worksheet('last_updated')
+    last_updated_sheet.update_cell(1, 1, last_update)
+
+    print('\nDemographic data sets updated in google sheet.')
+
 elif update_sheets == 'n':
-    updated_changes = input('\nRun comparison to previous week for changes? (y/n) ')
-    if updated_changes == 'y':
-        import changing_ktp
-    elif updated_changes == 'n':
-        print('\nProcess finished.')
-        exit()
-
-print('\nHear me, oh Great Google overseers...')
-
-
-# use creds to create a client to interact with the Google Drive API
-os.chdir('C:\\Users\\DuEvans\\Documents\\ktp_data')
-
-scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
-creds = ServiceAccountCredentials.from_json_keyfile_name('client_secret.json', scope)
-client = gspread.authorize(creds)
-
-# find each datasheet, clear the current values, write new data
-
-
-ktp_dashboard = client.open('Prepare Demographic Dashboard v1.3').worksheet('KTP Data')
-ktp_dashboard.clear()
-gspread_dataframe.set_with_dataframe(ktp_dashboard, prepare_data_non_conf)
-print('\nKTP-wide dashboard updated.')
-
-hr_team_dashboard = client.open('prepare_today').sheet1
-hr_team_dashboard.clear()
-gspread_dataframe.set_with_dataframe(hr_team_dashboard, prepare_data_non_conf)
-print('\nHR team dashboard updated.')
-
-di_progress = client.open('D&I Progress v1.0').worksheet('Prepare Today')
-di_progress.clear()
-gspread_dataframe.set_with_dataframe(di_progress, prepare_data_non_conf)
-
-di_progress_draft = client.open('D&I Progress v1.1').worksheet('Prepare Today')
-di_progress_draft.clear()
-gspread_dataframe.set_with_dataframe(di_progress_draft, prepare_data_non_conf)
-print('\nD&I Progress Dashboard updated.')
-
-# update terminations dashboard with pivoted 'Structure B' data
-turnover_sheet = client.open('Prepare Turnover Dashboard v1.0').worksheet('Today Headcount')
-turnover_sheet.clear()
-gspread_dataframe.set_with_dataframe(turnover_sheet, turnover_hc)
-
-digital_sheet = client.open('Prepare Turnover Dashboard v1.0').worksheet('Digital Headcount')
-digital_sheet.clear()
-gspread_dataframe.set_with_dataframe(digital_sheet, digital_hc)
-print('\nTurnover dashboard updated.')
-
-
-from updated_admissions_faculty import update_admissions_dashboard
-
-update_admissions_dashboard(target_date, records_date)
-
-
-
-# update the manager map google sheet with new information
-map_sheet = client.open('The Map v2').worksheet('population')
-map_sheet.clear()
-gspread_dataframe.set_with_dataframe(map_sheet, ktp_data_non_conf)
-print('\nManager map updated with current population.')
-
-
-# get today's date, again, but format it as mm/dd/yyyy, and include the time
-dt = datetime.now()
-dt_pretty = dt.strftime("%m/%d/%y %I:%M%p")
-
-# format into a string
-last_update = 'Data updated at: ' + dt_pretty + '.'
-print('\n')
-print(last_update)
-# send the string to the google sheet
-last_updated_sheet = client.open("demographic visuals data").worksheet('last_updated')
-last_updated_sheet.update_cell(1,1,last_update)
-
-print('\nDemographic data sets updated in google sheet.')
-
+    pass
 
 # run changing ktp if you're up for it
 update_changes_1 = input('\nRun comparison to previous date for changes? (y/n) ')
 if update_changes_1 == 'y':
     import changing_ktp
-
 elif update_changes_1 == 'n':
-    print('\nProcess finished.')
+    pass
 
+# prompt running D&I indices calculation
+run_indices = input('Run D&I indices calculations? (y/n) ')
+if run_indices == 'y':
+    calc_diversity_indices(target_date, df2)
+elif run_indices == 'n':
+    pass
+
+complete_time = time.time() - total_time
+
+print('\nTotal process time: ' + time.strftime("%H:%M:%S", time.gmtime(complete_time)))
+
+print('\nProcess finished.')
