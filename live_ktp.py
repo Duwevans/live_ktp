@@ -12,6 +12,7 @@ from oauth2client.service_account import ServiceAccountCredentials
 from data_tagging import *
 from update_historic_population_records import *
 from di_indices import calc_diversity_indices
+from comp_dashboard import update_comp_dash
 
 pd.options.mode.chained_assignment = None  # default='warn'
 
@@ -172,6 +173,11 @@ if update_sheets == 'y':
     ktp_dashboard = client.open('Prepare Demographic Dashboard v1.3').worksheet('KTP Data')
     ktp_dashboard.clear()
     gspread_dataframe.set_with_dataframe(ktp_dashboard, prepare_data_non_conf)
+
+
+    all_ktp_dashboard = client.open('KTP All-In Demographic Dashboard v1.3').worksheet('All KTP Data')
+    all_ktp_dashboard.clear()
+    gspread_dataframe.set_with_dataframe(all_ktp_dashboard, ktp_data_non_conf)
     print('\nKTP-wide dashboard updated.')
 
     hr_team_dashboard = client.open('prepare_today').sheet1
@@ -202,36 +208,18 @@ if update_sheets == 'y':
 
     update_admissions_dashboard(target_date, records_date)
 
-    # update data for the compensation dashboard
-    # send confidential population to the compensation dashboard
-    print('\nUpdating data for compensation dashboard...')
-    comp_dashboard = client.open('all_ktp_population_confidential').sheet1
-    comp_dashboard.clear()
-    gspread_dataframe.set_with_dataframe(comp_dashboard, conf_population)
+    # todo: update compensation dashboard
+    update_comp_dash(df2)
 
-    # get new information from the bonus forecast
-    bonuses = client.open('KIP 2018 Forecast').worksheet('2018 participants for editing')
-    bonuses = bonuses.get_all_records()
-    bonuses = pd.DataFrame.from_records(bonuses)
+    # send info to the bonus records sheet
+    df2['Total Base Pay Annualized - Amount'] = pd.to_numeric(df2['Total Base Pay Annualized - Amount'])
+    comp_data = df2[['ID', 'Total Base Pay Annualized - Amount']]
 
-    bonuses = bonuses[['EEID', '(Pro-Rated) KIP Target', '(Pro-Rated) Total Comp Target',
-                       'est. 2018 bonus payout', 'est. 2018 bonus payout %',
-                       'est. 2018 total comp', 'est. 2018 comp payout %']]
+    bonus_records = client.open('bonus_records').worksheet('pop_today')
+    bonus_records.clear()
+    gspread_dataframe.set_with_dataframe(bonus_records, comp_data)
 
-    bonuses = bonuses.rename(columns={'EEID': 'ID'})
-    df3 = pd.merge(df1, bonuses, on='ID', how='left')
-
-    # calculate total expected 2018 base comp + bonus
-    df3['Total Base Pay Annualized - Amount'] = pd.to_numeric(df3['Total Base Pay Annualized - Amount'])
-    df3['est. 2018 bonus payout'] = pd.to_numeric(df3['est. 2018 bonus payout'])
-    df3['est. 2018 bonus payout'] = df3['est. 2018 bonus payout'].fillna(0)
-    df3['est. 2018 total comp'] = (df3['Total Base Pay Annualized - Amount'] + df3['est. 2018 bonus payout'])
-
-    # send bonus information to the dashboard spreadsheet
-    bonus_dashboard = client.open('2018_population_with_forecasted_bonus_payouts').sheet1
-    bonus_dashboard.clear()
-    gspread_dataframe.set_with_dataframe(bonus_dashboard, df3)
-    print('\nCompensation dashboard updated.')
+    print('\nCompensation dashboards updated.')
 
     # update the manager map google sheet with new information
     map_sheet = client.open('The Map v2').worksheet('population')
