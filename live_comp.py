@@ -740,8 +740,77 @@ def create_comp_changes_data(target_date):
 
     mapped = map_comp_change_data(df1, p)
 
-    # todo: push compensation change data to gspread
+
+    # todo: pull historic population data from the compensation dashboard
+    # todo: combine all years population data into single frame
+    def update_comp_dash_population():
+        # read each population sheet
+        client = gcred()
+        # 2015 data
+        gs1 = client.open('comp_dashboard_backend').worksheet('pop_2015')
+        p2015 = gs1.get_all_records()
+        p2015 = pd.DataFrame.from_records(p2015)
+        p2015['data_year'] = '2015'
+        # 2016 data
+        gs2 = client.open('comp_dashboard_backend').worksheet('pop_2016')
+        p2016 = gs2.get_all_records()
+        p2016 = pd.DataFrame.from_records(p2016)
+        p2016['data_year'] = '2016'
+        # 2017 data
+        gs3 = client.open('comp_dashboard_backend').worksheet('pop_2017')
+        p2017 = gs3.get_all_records()
+        p2017 = pd.DataFrame.from_records(p2017)
+        p2017['data_year'] = '2017'
+        # 2018 data
+        gs4 = client.open('comp_dashboard_backend').worksheet('pop_2018')
+        p2018 = gs4.get_all_records()
+        p2018 = pd.DataFrame.from_records(p2018)
+        p2018['data_year'] = '2018'
+        # 2019 data
+        gs5 = client.open('comp_dashboard_backend').worksheet('pop_2019')
+        p2019 = gs5.get_all_records()
+        p2019 = pd.DataFrame.from_records(p2019)
+        p2019['data_year'] = '2019'
+        # most recent data
+        gs6 = client.open('comp_dashboard_backend').worksheet('population_data')
+        p_today = gs6.get_all_records()
+        p_today = pd.DataFrame.from_records(p_today)
+        p_today['data_year'] = 'today'
+
+        # combine all population sheets
+        dfh = p2015.append(p2016)
+        dfh = dfh.append(p2017)
+        dfh = dfh.append(p2018)
+        dfh = dfh.append(p2019)
+        dfh = dfh.append(p_today)
+
+        # todo: trim to prepare
+        prepare_h = dfh.loc[dfh['Prepare/New A'] == 'Prepare']
+        prepare_h = prepare_h.loc[prepare_h['Structure B'].isin(['Admissions', 'Common',
+                                                                 'NXT', 'Licensure'])]
+
+        # push all population sheets to single historic list
+        all_pop_sheet = client.open('comp_dashboard_backend').worksheet('pop_history')
+        all_pop_sheet.clear()
+        gspread_dataframe.set_with_dataframe(all_pop_sheet, prepare_h)
+
+# todo: update bonus targets in the technology compensation spreadsheet
+def update_tech_bonus_targets(tech_pop):
+    # todo: pull list of bonus_2018 from bonus_records spreadsheet
     client = gcred()
-    gs1 = client.open('all_comp_change_data').sheet1
-    gs1.clear()
-    gspread_dataframe.set_with_dataframe(gs1, mapped)
+    gs1 = client.open('bonus_records').worksheet('bonus_2018')
+    tech_bonus = gs1.get_all_records()
+    tech_bonus = pd.DataFrame.from_records(tech_bonus)
+    tech_bonus = tech_bonus[['EEID', ' (Pro-Rated) KIP Target ', 'Current KIP %']]
+    tech_bonus = tech_bonus.rename(columns={' (Pro-Rated) KIP Target ': 'pro_target', 'EEID': 'ID'})
+    # silencing for now as this is all unused
+    # todo: condense tech population to just be ID
+    #tech_pop = tech_pop[['ID', 'record_date']]
+    # todo: merge on to list of technology population
+    #tech_bonus_pop = pd.merge(tech_pop, tech_bonus, on='ID', how='left')
+    #tech_bonus_pop = tech_bonus_pop[['ID', 'pro_target', 'Current KIP %']]
+
+    # todo: push info to backend tech comp spreadsheet
+    #gs2 = client.open('Technology Group Compensation').worksheet('bonus_targets')
+    #gs2.clear()
+    #gspread_dataframe.set_with_dataframe(gs2, tech_bonus_pop)
