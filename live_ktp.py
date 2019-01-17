@@ -9,10 +9,11 @@ from datetime import datetime
 from datetime import date
 from sys import exit
 from oauth2client.service_account import ServiceAccountCredentials
+from gcred import gcred
 from data_tagging import *
 from update_historic_population_records import *
 from di_indices import calc_diversity_indices
-from comp_dashboard import update_comp_dash
+from live_comp import update_comp_dash, update_tech_bonus_targets
 
 pd.options.mode.chained_assignment = None  # default='warn'
 
@@ -25,6 +26,7 @@ target_date = input('\nWhat is the target date? (mm_dd_yyyy) ')
 file = ('C:\\Users\\DuEvans\\Downloads\\ktp_pop_' + target_date + '.xlsx')
 records_date = datetime.strptime(target_date, '%m_%d_%Y')
 
+import update_brm
 
 # read the current population dataset
 df0 = pd.read_excel(file, skiprows=7)
@@ -135,7 +137,23 @@ common_data_non_conf = pop_non_conf.loc[pop_non_conf['Structure'].isin(['Common'
 common_no_nxt_non_conf = common_data_non_conf.loc[~common_data_non_conf['Team'].isin(['NXT Service', 'NXT Shared', 'Balance Resolution', 'SST'])]
 new_ventures_data_non_conf = pop_non_conf.loc[pop_non_conf['Structure'].isin(['New Ventures'])]
 prepare_data_non_conf = pop_non_conf.loc[pop_non_conf['Prepare/New A'] == 'Prepare']
+prepare_dir_above = prepare_data_non_conf.loc[
+    prepare_data_non_conf['Management Level A'].isin(['Director', 'Executive Director',
+                                                      'VP', 'Above VP'])]
 
+# technology groups
+# need to add: technology group
+# remove holly/platform as a service
+technology = df2.loc[df2['Group'] == 'Technology']
+technology = technology.loc[technology['Team'] != 'PaaS']
+
+# drop age, gender, ethnicity columns from the technology data
+technology_nconf = technology.drop(columns=['Race/Ethnicity (Locale Sensitive)',
+                                            'Gender', 'Date of Birth (Locale Sensitive)',
+                                            'Ethnicity', 'days_old', 'Age',
+                                            'Age Bracket', 'di_leader', 'di_poc'])
+
+#
 ktp_data_conf = pop_conf.loc[pop_conf['Structure'].isin(['Admissions', 'Licensure', 'Common', 'New Ventures', 'Executive'])]
 
 # find the faculty based on job profile
@@ -192,7 +210,15 @@ if update_sheets == 'y':
     di_progress_draft = client.open('D&I Progress v1.1').worksheet('Prepare Today')
     di_progress_draft.clear()
     gspread_dataframe.set_with_dataframe(di_progress_draft, prepare_data_non_conf)
-    print('\nD&I Progress Dashboard updated.')
+
+    di_progress_v2 = client.open('D&I Progress v1.2').worksheet('Prepare Today')
+    di_progress_v2.clear()
+    gspread_dataframe.set_with_dataframe(di_progress_v2, prepare_data_non_conf)
+
+    prev_15_hc = client.open('[for website] last 15 (Director +)').worksheet('current_headcount')
+    prev_15_hc.clear()
+    gspread_dataframe.set_with_dataframe(prev_15_hc, prepare_dir_above)
+    print('\nD&I Progress Dashboards updated.')
 
     # update terminations dashboard with pivoted 'Structure B' data
     turnover_sheet = client.open('Prepare Turnover Dashboard v1.0').worksheet('Today Headcount')
@@ -209,7 +235,15 @@ if update_sheets == 'y':
     update_admissions_dashboard(target_date, records_date)
 
     # todo: update compensation dashboard
-    update_comp_dash(df2)
+    # ensure that compensation dataframe removes advise, ku, kie
+    df3 = df2.loc[~df2['Structure'].isin(['KU', 'KIE', 'Advise'])]
+    update_comp_dash(df3, target_date)
+
+    # send info to the compensation dashboard backend
+    comp_ds_backend = client.open('comp_dashboard_backend').worksheet('population_data')
+    comp_ds_backend.clear()
+    gspread_dataframe.set_with_dataframe(comp_ds_backend, df3)
+    print('n\Compensation dashboard backend updating with current population.')
 
     # send info to the bonus records sheet
     df2['Total Base Pay Annualized - Amount'] = pd.to_numeric(df2['Total Base Pay Annualized - Amount'])
@@ -249,6 +283,17 @@ if update_sheets == 'y':
     last_updated_sheet.update_cell(1, 1, last_update)
 
     print('\nDemographic data sets updated in google sheet.')
+
+    # update technology compensation data spreadsheet
+    client = gcred()
+    tech_comp = client.open('Technology Group Compensation (To Share)').worksheet('population data')
+    tech_comp.clear()
+    gspread_dataframe.set_with_dataframe(tech_comp, technology_nconf)
+
+    update_tech_bonus_targets(technology)
+
+    print('\nTechnology compensation dashboard updated.')
+
 
 elif update_sheets == 'n':
     pass
